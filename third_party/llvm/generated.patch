@@ -1,1596 +1,1464 @@
 Auto generated patch. Do not edit or delete it, even if empty.
-diff -ruN --strip-trailing-cr a/clang/docs/ReleaseNotes.rst b/clang/docs/ReleaseNotes.rst
---- a/clang/docs/ReleaseNotes.rst
-+++ b/clang/docs/ReleaseNotes.rst
-@@ -92,10 +92,6 @@
+diff -ruN --strip-trailing-cr a/cross-project-tests/debuginfo-tests/dexter/dex/tools/clang_opt_bisect/Tool.py b/cross-project-tests/debuginfo-tests/dexter/dex/tools/clang_opt_bisect/Tool.py
+--- a/cross-project-tests/debuginfo-tests/dexter/dex/tools/clang_opt_bisect/Tool.py
++++ b/cross-project-tests/debuginfo-tests/dexter/dex/tools/clang_opt_bisect/Tool.py
+@@ -12,7 +12,6 @@
+ import re
+ import pickle
  
- Resolutions to C++ Defect Reports
- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
--- Implemented `CWG1473 <https://wg21.link/CWG1473>`_ which allows spaces after ``operator""``.
--  Clang used to err on the lack of space when the literal suffix identifier was invalid in
--  all the language modes, which contradicted the deprecation of the whitespaces.
--  Also turn on ``-Wdeprecated-literal-operator`` by default in all the language modes.
- 
- C Language Changes
- ------------------
-diff -ruN --strip-trailing-cr a/clang/include/clang/Basic/DiagnosticLexKinds.td b/clang/include/clang/Basic/DiagnosticLexKinds.td
---- a/clang/include/clang/Basic/DiagnosticLexKinds.td
-+++ b/clang/include/clang/Basic/DiagnosticLexKinds.td
-@@ -276,6 +276,12 @@
-   "identifier after literal will be treated as a reserved user-defined literal "
-   "suffix in C++11">,
-   InGroup<CXX11CompatReservedUserDefinedLiteral>, DefaultIgnore;
-+def ext_reserved_user_defined_literal : ExtWarn<
-+  "invalid suffix on literal; C++11 requires a space between literal and "
-+  "identifier">, InGroup<ReservedUserDefinedLiteral>, DefaultError;
-+def ext_ms_reserved_user_defined_literal : ExtWarn<
-+  "invalid suffix on literal; C++11 requires a space between literal and "
-+  "identifier">, InGroup<ReservedUserDefinedLiteral>;
- def err_unsupported_string_concat : Error<
-   "unsupported non-standard concatenation of string literals">;
- 
-diff -ruN --strip-trailing-cr a/clang/include/clang/Basic/DiagnosticSemaKinds.td b/clang/include/clang/Basic/DiagnosticSemaKinds.td
---- a/clang/include/clang/Basic/DiagnosticSemaKinds.td
-+++ b/clang/include/clang/Basic/DiagnosticSemaKinds.td
-@@ -411,7 +411,7 @@
-   InGroup<ReservedIdentifier>, DefaultIgnore;
- def warn_deprecated_literal_operator_id: Warning<
-   "identifier %0 preceded by whitespace in a literal operator declaration "
--  "is deprecated">, InGroup<DeprecatedLiteralOperator>;
-+  "is deprecated">, InGroup<DeprecatedLiteralOperator>, DefaultIgnore;
- def warn_reserved_module_name : Warning<
-   "%0 is a reserved name for a module">, InGroup<ReservedModuleIdentifier>;
- 
-diff -ruN --strip-trailing-cr a/clang/lib/AST/Interp/Integral.h b/clang/lib/AST/Interp/Integral.h
---- a/clang/lib/AST/Interp/Integral.h
-+++ b/clang/lib/AST/Interp/Integral.h
-@@ -94,7 +94,6 @@
-   explicit operator unsigned() const { return V; }
-   explicit operator int64_t() const { return V; }
-   explicit operator uint64_t() const { return V; }
--  explicit operator int32_t() const { return V; }
- 
-   APSInt toAPSInt() const {
-     return APSInt(APInt(Bits, static_cast<uint64_t>(V), Signed), !Signed);
-diff -ruN --strip-trailing-cr a/clang/lib/AST/Interp/InterpBuiltin.cpp b/clang/lib/AST/Interp/InterpBuiltin.cpp
---- a/clang/lib/AST/Interp/InterpBuiltin.cpp
-+++ b/clang/lib/AST/Interp/InterpBuiltin.cpp
-@@ -32,65 +32,6 @@
-   return R;
+-from dex.builder import run_external_build_script
+ from dex.command.ParseCommand import get_command_infos
+ from dex.debugger.Debuggers import run_debugger_subprocess
+ from dex.debugger.DebuggerControllers.DefaultController import DefaultController
+diff -ruN --strip-trailing-cr a/llvm/lib/Target/NVPTX/NVPTXInstrInfo.td b/llvm/lib/Target/NVPTX/NVPTXInstrInfo.td
+--- a/llvm/lib/Target/NVPTX/NVPTXInstrInfo.td
++++ b/llvm/lib/Target/NVPTX/NVPTXInstrInfo.td
+@@ -165,7 +165,6 @@
+    NVPTXRegClass ret = !cond(
+      !eq(name, "i1"): Int1Regs,
+      !eq(name, "i16"): Int16Regs,
+-     !eq(name, "v2i16"): Int32Regs,
+      !eq(name, "i32"): Int32Regs,
+      !eq(name, "i64"): Int64Regs,
+      !eq(name, "f16"): Int16Regs,
+@@ -215,12 +214,6 @@
+               [(set Int16Regs:$dst, (OpNode Int16Regs:$a, (imm):$b))]>;
  }
  
--/// Pushes \p Val to the stack, as a target-dependent 'int'.
--static void pushInt(InterpState &S, int32_t Val) {
--  const TargetInfo &TI = S.getCtx().getTargetInfo();
--  unsigned IntWidth = TI.getIntWidth();
+-class I16x2<string OpcStr, SDNode OpNode> :
+- NVPTXInst<(outs Int32Regs:$dst), (ins Int32Regs:$a, Int32Regs:$b),
+-              !strconcat(OpcStr, "16x2 \t$dst, $a, $b;"),
+-              [(set Int32Regs:$dst, (OpNode (v2i16 Int32Regs:$a), (v2i16 Int32Regs:$b)))]>,
+-              Requires<[hasPTX<80>, hasSM<90>]>;
 -
--  if (IntWidth == 32)
--    S.Stk.push<Integral<32, true>>(Integral<32, true>::from(Val));
--  else if (IntWidth == 16)
--    S.Stk.push<Integral<16, true>>(Integral<16, true>::from(Val));
--  else
--    llvm_unreachable("Int isn't 16 or 32 bit?");
+ // Template for instructions which take 3 int args.  The instructions are
+ // named "<OpcStr>.s32" (e.g. "addc.cc.s32").
+ multiclass ADD_SUB_INT_CARRY<string OpcStr, SDNode OpNode> {
+@@ -747,10 +740,12 @@
+ // def v2f16imm : Operand<v2f16>;
+ // defm SELP_f16x2 : SELP_PATTERN<"b32", v2f16, Int32Regs, v2f16imm, imm>;
+ 
+-foreach vt = [v2f16, v2bf16, v2i16] in {
+-def : Pat<(vt (select Int1Regs:$p, (vt Int32Regs:$a), (vt Int32Regs:$b))),
+-          (SELP_b32rr Int32Regs:$a, Int32Regs:$b, Int1Regs:$p)>;
 -}
++def SELP_f16x2rr :
++    NVPTXInst<(outs Int32Regs:$dst),
++              (ins Int32Regs:$a, Int32Regs:$b, Int1Regs:$p),
++              "selp.b32 \t$dst, $a, $b, $p;",
++              [(set Int32Regs:$dst,
++                    (select Int1Regs:$p, (v2f16 Int32Regs:$a), (v2f16 Int32Regs:$b)))]>;
+ 
+ //-----------------------------------
+ // Test Instructions
+@@ -792,9 +787,6 @@
+ defm ADD : I3<"add.s", add>;
+ defm SUB : I3<"sub.s", sub>;
+ 
+-def ADD16x2 : I16x2<"add.s", add>;
+-def SUB16x2 : I16x2<"sub.s", sub>;
 -
--static bool retInt(InterpState &S, CodePtr OpPC, APValue &Result) {
--  const TargetInfo &TI = S.getCtx().getTargetInfo();
--  unsigned IntWidth = TI.getIntWidth();
+ // in32 and int64 addition and subtraction with carry-out.
+ defm ADDCC : ADD_SUB_INT_CARRY<"add.cc", addc>;
+ defm SUBCC : ADD_SUB_INT_CARRY<"sub.cc", subc>;
+@@ -834,12 +826,6 @@
+ defm SMIN : I3<"min.s", smin>;
+ defm UMIN : I3<"min.u", umin>;
+ 
+-def SMAX16x2 : I16x2<"max.s", smax>;
+-def UMAX16x2 : I16x2<"max.u", umax>;
+-def SMIN16x2 : I16x2<"min.s", smin>;
+-def UMIN16x2 : I16x2<"min.u", umin>;
 -
--  if (IntWidth == 32)
--    return Ret<PT_Sint32>(S, OpPC, Result);
--  else if (IntWidth == 16)
--    return Ret<PT_Sint16>(S, OpPC, Result);
--  llvm_unreachable("Int isn't 16 or 32 bit?");
+-
+ //
+ // Wide multiplication
+ //
+@@ -2647,7 +2633,7 @@
+   def: Pat<(vt (ProxyReg  vt:$src)), (ProxyRegI16 Int16Regs:$src)>;
+ }
+ 
+-foreach vt = [v2f16, v2bf16, v2i16] in {
++foreach vt = [v2f16, v2bf16] in {
+   def: Pat<(vt (ProxyReg  vt:$src)), (ProxyRegI32 Int32Regs:$src)>;
+ }
+ 
+@@ -2962,11 +2948,6 @@
+          (ProxyRegI16 Int16Regs:$a)>;
+ }
+ 
+-def: Pat<(v2i16 (bitconvert (i32 Int32Regs:$a))),
+-         (ProxyRegI32 Int32Regs:$a)>;
+-def: Pat<(i32 (bitconvert (v2i16 Int32Regs:$a))),
+-         (ProxyRegI32 Int32Regs:$a)>;
+-
+ // NOTE: pred->fp are currently sub-optimal due to an issue in TableGen where
+ // we cannot specify floating-point literals in isel patterns.  Therefore, we
+ // use an integer selp to select either 1 or 0 and then cvt to floating-point.
+@@ -3305,18 +3286,19 @@
+ def : Pat<(i32 (trunc (sra Int64Regs:$s, (i32 32)))),
+           (I64toI32H Int64Regs:$s)>;
+ 
+-foreach vt = [v2f16, v2bf16, v2i16] in {
+-def : Pat<(extractelt (vt Int32Regs:$src), 0),
++def : Pat<(f16 (extractelt (v2f16 Int32Regs:$src), 0)),
+           (I32toI16L Int32Regs:$src)>;
+-def : Pat<(extractelt (vt Int32Regs:$src), 1),
++def : Pat<(f16 (extractelt (v2f16 Int32Regs:$src), 1)),
+           (I32toI16H Int32Regs:$src)>;
 -}
--
--static void pushSizeT(InterpState &S, uint64_t Val) {
--  const TargetInfo &TI = S.getCtx().getTargetInfo();
--  unsigned SizeTWidth = TI.getTypeWidth(TI.getSizeType());
--
--  switch (SizeTWidth) {
--  case 64:
--    S.Stk.push<Integral<64, false>>(Integral<64, false>::from(Val));
--    break;
--  case 32:
--    S.Stk.push<Integral<32, false>>(Integral<32, false>::from(Val));
--    break;
--  case 16:
--    S.Stk.push<Integral<16, false>>(Integral<16, false>::from(Val));
--    break;
--  default:
--    llvm_unreachable("We don't handle this size_t size.");
--  }
--}
--
--static bool retSizeT(InterpState &S, CodePtr OpPC, APValue &Result) {
--  const TargetInfo &TI = S.getCtx().getTargetInfo();
--  unsigned SizeTWidth = TI.getTypeWidth(TI.getSizeType());
--
--  switch (SizeTWidth) {
--  case 64:
--    return Ret<PT_Uint64>(S, OpPC, Result);
--  case 32:
--    return Ret<PT_Uint32>(S, OpPC, Result);
--  case 16:
--    return Ret<PT_Uint16>(S, OpPC, Result);
--  }
--
--  llvm_unreachable("size_t isn't 64 or 32 bit?");
--}
--
- static bool interp__builtin_strcmp(InterpState &S, CodePtr OpPC,
-                                    const InterpFrame *Frame) {
-   const Pointer &A = getParam<Pointer>(Frame, 0);
-@@ -126,35 +67,7 @@
-       break;
-   }
- 
--  pushInt(S, Result);
--  return true;
--}
--
--static bool interp__builtin_strlen(InterpState &S, CodePtr OpPC,
--                                   const InterpFrame *Frame) {
--  const Pointer &StrPtr = getParam<Pointer>(Frame, 0);
--
--  if (!CheckArray(S, OpPC, StrPtr))
--    return false;
--
--  if (!CheckLive(S, OpPC, StrPtr, AK_Read))
--    return false;
--
--  assert(StrPtr.getFieldDesc()->isPrimitiveArray());
--
--  size_t Len = 0;
--  for (size_t I = StrPtr.getIndex();; ++I, ++Len) {
--    const Pointer &ElemPtr = StrPtr.atIndex(I);
--
--    if (!CheckRange(S, OpPC, ElemPtr, AK_Read))
--      return false;
--
--    uint8_t Val = ElemPtr.deref<uint8_t>();
--    if (Val == 0)
--      break;
--  }
--
--  pushSizeT(S, Len);
-+  S.Stk.push<Integral<32, true>>(Integral<32, true>::from(Result));
-   return true;
- }
- 
-@@ -287,7 +200,7 @@
-                                   const InterpFrame *Frame, const Function *F) {
-   const Floating &Arg = S.Stk.peek<Floating>();
- 
--  pushInt(S, Arg.isNan());
-+  S.Stk.push<Integral<32, true>>(Integral<32, true>::from(Arg.isNan()));
-   return true;
- }
- 
-@@ -298,9 +211,10 @@
-   bool IsInf = Arg.isInf();
- 
-   if (CheckSign)
--    pushInt(S, IsInf ? (Arg.isNegative() ? -1 : 1) : 0);
-+    S.Stk.push<Integral<32, true>>(
-+        Integral<32, true>::from(IsInf ? (Arg.isNegative() ? -1 : 1) : 0));
-   else
--    pushInt(S, Arg.isInf());
-+    S.Stk.push<Integral<32, true>>(Integral<32, true>::from(Arg.isInf()));
-   return true;
- }
- 
-@@ -309,7 +223,7 @@
-                                      const Function *F) {
-   const Floating &Arg = S.Stk.peek<Floating>();
- 
--  pushInt(S, Arg.isFinite());
-+  S.Stk.push<Integral<32, true>>(Integral<32, true>::from(Arg.isFinite()));
-   return true;
- }
- 
-@@ -318,7 +232,7 @@
-                                      const Function *F) {
-   const Floating &Arg = S.Stk.peek<Floating>();
- 
--  pushInt(S, Arg.isNormal());
-+  S.Stk.push<Integral<32, true>>(Integral<32, true>::from(Arg.isNormal()));
-   return true;
- }
- 
-@@ -335,12 +249,12 @@
- 
-   int32_t Result =
-       static_cast<int32_t>((F.classify() & FPClassArg).getZExtValue());
--  pushInt(S, Result);
-+  S.Stk.push<Integral<32, true>>(Integral<32, true>::from(Result));
- 
-   return true;
- }
- 
--/// Five int values followed by one floating value.
-+/// Five int32 values followed by one floating value.
- static bool interp__builtin_fpclassify(InterpState &S, CodePtr OpPC,
-                                        const InterpFrame *Frame,
-                                        const Function *Func) {
-@@ -366,9 +280,8 @@
-   unsigned Offset = align(primSize(PT_Float)) +
-                     ((1 + (4 - Index)) * align(primSize(PT_Sint32)));
- 
--  // FIXME: The size of the value we're peeking here is target-dependent.
-   const Integral<32, true> &I = S.Stk.peek<Integral<32, true>>(Offset);
--  pushInt(S, static_cast<int32_t>(I));
-+  S.Stk.push<Integral<32, true>>(I);
-   return true;
- }
- 
-@@ -399,11 +312,7 @@
-     return RetVoid(S, OpPC, Dummy);
-   case Builtin::BI__builtin_strcmp:
-     if (interp__builtin_strcmp(S, OpPC, Frame))
--      return retInt(S, OpPC, Dummy);
--    break;
--  case Builtin::BI__builtin_strlen:
--    if (interp__builtin_strlen(S, OpPC, Frame))
--      return retSizeT(S, OpPC, Dummy);
-+      return Ret<PT_Sint32>(S, OpPC, Dummy);
-     break;
-   case Builtin::BI__builtin_nan:
-   case Builtin::BI__builtin_nanf:
-@@ -463,34 +372,34 @@
- 
-   case Builtin::BI__builtin_isnan:
-     if (interp__builtin_isnan(S, OpPC, Frame, F))
--      return retInt(S, OpPC, Dummy);
-+      return Ret<PT_Sint32>(S, OpPC, Dummy);
-     break;
- 
-   case Builtin::BI__builtin_isinf:
-     if (interp__builtin_isinf(S, OpPC, Frame, F, /*Sign=*/false))
--      return retInt(S, OpPC, Dummy);
-+      return Ret<PT_Sint32>(S, OpPC, Dummy);
-     break;
- 
-   case Builtin::BI__builtin_isinf_sign:
-     if (interp__builtin_isinf(S, OpPC, Frame, F, /*Sign=*/true))
--      return retInt(S, OpPC, Dummy);
-+      return Ret<PT_Sint32>(S, OpPC, Dummy);
-     break;
- 
-   case Builtin::BI__builtin_isfinite:
-     if (interp__builtin_isfinite(S, OpPC, Frame, F))
--      return retInt(S, OpPC, Dummy);
-+      return Ret<PT_Sint32>(S, OpPC, Dummy);
-     break;
-   case Builtin::BI__builtin_isnormal:
-     if (interp__builtin_isnormal(S, OpPC, Frame, F))
--      return retInt(S, OpPC, Dummy);
-+      return Ret<PT_Sint32>(S, OpPC, Dummy);
-     break;
-   case Builtin::BI__builtin_isfpclass:
-     if (interp__builtin_isfpclass(S, OpPC, Frame, F, Call))
--      return retInt(S, OpPC, Dummy);
-+      return Ret<PT_Sint32>(S, OpPC, Dummy);
-     break;
-   case Builtin::BI__builtin_fpclassify:
-     if (interp__builtin_fpclassify(S, OpPC, Frame, F))
--      return retInt(S, OpPC, Dummy);
-+      return Ret<PT_Sint32>(S, OpPC, Dummy);
-     break;
- 
-   case Builtin::BI__builtin_fabs:
-diff -ruN --strip-trailing-cr a/clang/lib/CodeGen/CGDebugInfo.cpp b/clang/lib/CodeGen/CGDebugInfo.cpp
---- a/clang/lib/CodeGen/CGDebugInfo.cpp
-+++ b/clang/lib/CodeGen/CGDebugInfo.cpp
-@@ -391,14 +391,12 @@
-   SourceManager &SM = CGM.getContext().getSourceManager();
-   StringRef FileName;
-   FileID FID;
--  std::optional<llvm::DIFile::ChecksumInfo<StringRef>> CSInfo;
- 
-   if (Loc.isInvalid()) {
-     // The DIFile used by the CU is distinct from the main source file. Call
-     // createFile() below for canonicalization if the source file was specified
-     // with an absolute path.
-     FileName = TheCU->getFile()->getFilename();
--    CSInfo = TheCU->getFile()->getChecksum();
-   } else {
-     PresumedLoc PLoc = SM.getPresumedLoc(Loc);
-     FileName = PLoc.getFilename();
-@@ -419,13 +417,13 @@
-       return cast<llvm::DIFile>(V);
-   }
- 
--  if (!CSInfo) {
--    SmallString<64> Checksum;
--    std::optional<llvm::DIFile::ChecksumKind> CSKind =
-+  SmallString<64> Checksum;
+ def : Pat<(v2f16 (build_vector (f16 Int16Regs:$a), (f16 Int16Regs:$b))),
+           (V2I16toI32 Int16Regs:$a, Int16Regs:$b)>;
 +
-+  std::optional<llvm::DIFile::ChecksumKind> CSKind =
-       computeChecksum(FID, Checksum);
--    if (CSKind)
--      CSInfo.emplace(*CSKind, Checksum);
--  }
-+  std::optional<llvm::DIFile::ChecksumInfo<StringRef>> CSInfo;
-+  if (CSKind)
-+    CSInfo.emplace(*CSKind, Checksum);
-   return createFile(FileName, CSInfo, getSource(SM, SM.getFileID(Loc)));
- }
++def : Pat<(bf16 (extractelt (v2bf16 Int32Regs:$src), 0)),
++          (I32toI16L Int32Regs:$src)>;
++def : Pat<(bf16 (extractelt (v2bf16 Int32Regs:$src), 1)),
++          (I32toI16H Int32Regs:$src)>;
+ def : Pat<(v2bf16 (build_vector (bf16 Int16Regs:$a), (bf16 Int16Regs:$b))),
+           (V2I16toI32 Int16Regs:$a, Int16Regs:$b)>;
+-def : Pat<(v2i16 (build_vector (i16 Int16Regs:$a), (i16 Int16Regs:$b))),
+-          (V2I16toI32 Int16Regs:$a, Int16Regs:$b)>;
  
-diff -ruN --strip-trailing-cr a/clang/lib/CodeGen/CGDebugInfo.h b/clang/lib/CodeGen/CGDebugInfo.h
---- a/clang/lib/CodeGen/CGDebugInfo.h
-+++ b/clang/lib/CodeGen/CGDebugInfo.h
-@@ -148,7 +148,7 @@
-   llvm::BumpPtrAllocator DebugInfoNames;
-   StringRef CWDName;
+ // Count leading zeros
+ let hasSideEffects = false in {
+diff -ruN --strip-trailing-cr a/llvm/lib/Target/NVPTX/NVPTXISelDAGToDAG.cpp b/llvm/lib/Target/NVPTX/NVPTXISelDAGToDAG.cpp
+--- a/llvm/lib/Target/NVPTX/NVPTXISelDAGToDAG.cpp
++++ b/llvm/lib/Target/NVPTX/NVPTXISelDAGToDAG.cpp
+@@ -612,10 +612,10 @@
+ bool NVPTXDAGToDAGISel::tryEXTRACT_VECTOR_ELEMENT(SDNode *N) {
+   SDValue Vector = N->getOperand(0);
  
--  llvm::DenseMap<const char *, llvm::TrackingMDRef> DIFileCache;
-+  llvm::StringMap<llvm::TrackingMDRef> DIFileCache;
-   llvm::DenseMap<const FunctionDecl *, llvm::TrackingMDRef> SPCache;
-   /// Cache declarations relevant to DW_TAG_imported_declarations (C++
-   /// using declarations and global alias variables) that aren't covered
-diff -ruN --strip-trailing-cr a/clang/lib/Lex/Lexer.cpp b/clang/lib/Lex/Lexer.cpp
---- a/clang/lib/Lex/Lexer.cpp
-+++ b/clang/lib/Lex/Lexer.cpp
-@@ -2009,11 +2009,53 @@
+-  // We only care about 16x2 as it's the only real vector type we
++  // We only care about f16x2 as it's the only real vector type we
+   // need to deal with.
+   MVT VT = Vector.getSimpleValueType();
+-  if (!Isv2x16VT(VT))
++  if (!(VT == MVT::v2f16 || VT == MVT::v2bf16))
+     return false;
+   // Find and record all uses of this vector that extract element 0 or 1.
+   SmallVector<SDNode *, 4> E0, E1;
+@@ -828,7 +828,6 @@
+     return Opcode_i16;
+   case MVT::v2f16:
+   case MVT::v2bf16:
+-  case MVT::v2i16:
+     return Opcode_i32;
+   case MVT::f32:
+     return Opcode_f32;
+@@ -910,8 +909,9 @@
+   // Vector Setting
+   unsigned vecType = NVPTX::PTXLdStInstCode::Scalar;
+   if (SimpleVT.isVector()) {
+-    assert(Isv2x16VT(LoadedVT) && "Unexpected vector type");
+-    // v2f16/v2bf16/v2i16 is loaded using ld.b32
++    assert((LoadedVT == MVT::v2f16 || LoadedVT == MVT::v2bf16) &&
++           "Unexpected vector type");
++    // v2f16/v2bf16 is loaded using ld.b32
+     fromTypeWidth = 32;
    }
  
-   // C++11 [lex.ext]p10, [usrlit.suffix]p1: A program containing a ud-suffix
--  // that does not start with an underscore is ill-formed. We assume a suffix
--  // beginning with a UCN or UTF-8 character is more likely to be a ud-suffix
--  // than a macro, however, and accept that.
--  if (!Consumed)
-+  // that does not start with an underscore is ill-formed. As a conforming
-+  // extension, we treat all such suffixes as if they had whitespace before
-+  // them. We assume a suffix beginning with a UCN or UTF-8 character is more
-+  // likely to be a ud-suffix than a macro, however, and accept that.
-+  if (!Consumed) {
-+    bool IsUDSuffix = false;
-+    if (C == '_')
-+      IsUDSuffix = true;
-+    else if (IsStringLiteral && LangOpts.CPlusPlus14) {
-+      // In C++1y, we need to look ahead a few characters to see if this is a
-+      // valid suffix for a string literal or a numeric literal (this could be
-+      // the 'operator""if' defining a numeric literal operator).
-+      const unsigned MaxStandardSuffixLength = 3;
-+      char Buffer[MaxStandardSuffixLength] = { C };
-+      unsigned Consumed = Size;
-+      unsigned Chars = 1;
-+      while (true) {
-+        unsigned NextSize;
-+        char Next = getCharAndSizeNoWarn(CurPtr + Consumed, NextSize, LangOpts);
-+        if (!isAsciiIdentifierContinue(Next)) {
-+          // End of suffix. Check whether this is on the allowed list.
-+          const StringRef CompleteSuffix(Buffer, Chars);
-+          IsUDSuffix =
-+              StringLiteralParser::isValidUDSuffix(LangOpts, CompleteSuffix);
-+          break;
-+        }
-+
-+        if (Chars == MaxStandardSuffixLength)
-+          // Too long: can't be a standard suffix.
-+          break;
-+
-+        Buffer[Chars++] = Next;
-+        Consumed += NextSize;
-+      }
-+    }
-+
-+    if (!IsUDSuffix) {
-+      if (!isLexingRawMode())
-+        Diag(CurPtr, LangOpts.MSVCCompat
-+                         ? diag::ext_ms_reserved_user_defined_literal
-+                         : diag::ext_reserved_user_defined_literal)
-+            << FixItHint::CreateInsertion(getSourceLocation(CurPtr), " ");
-+      return CurPtr;
-+    }
-+
-     CurPtr = ConsumeChar(CurPtr, Size, Result);
-+  }
- 
-   Result.setFlag(Token::HasUDSuffix);
-   while (true) {
-diff -ruN --strip-trailing-cr a/clang/test/AST/Interp/builtin-functions.cpp b/clang/test/AST/Interp/builtin-functions.cpp
---- a/clang/test/AST/Interp/builtin-functions.cpp
-+++ b/clang/test/AST/Interp/builtin-functions.cpp
-@@ -1,11 +1,7 @@
--// RUN: %clang_cc1 -Wno-string-plus-int -fexperimental-new-constant-interpreter %s -verify
--// RUN: %clang_cc1 -Wno-string-plus-int -fexperimental-new-constant-interpreter -triple i686 %s -verify
--// RUN: %clang_cc1 -Wno-string-plus-int -verify=ref %s -Wno-constant-evaluated
--// RUN: %clang_cc1 -std=c++20 -Wno-string-plus-int -fexperimental-new-constant-interpreter %s -verify
--// RUN: %clang_cc1 -std=c++20 -Wno-string-plus-int -fexperimental-new-constant-interpreter -triple i686 %s -verify
--// RUN: %clang_cc1 -std=c++20 -Wno-string-plus-int -verify=ref %s -Wno-constant-evaluated
--// RUN: %clang_cc1 -triple avr -std=c++20 -Wno-string-plus-int -fexperimental-new-constant-interpreter %s -verify
--// RUN: %clang_cc1 -triple avr -std=c++20 -Wno-string-plus-int -verify=ref %s -Wno-constant-evaluated
-+// RUN: %clang_cc1 -fexperimental-new-constant-interpreter %s -verify
-+// RUN: %clang_cc1 -verify=ref %s -Wno-constant-evaluated
-+// RUN: %clang_cc1 -std=c++20 -fexperimental-new-constant-interpreter %s -verify
-+// RUN: %clang_cc1 -std=c++20 -verify=ref %s -Wno-constant-evaluated
- 
- 
- namespace strcmp {
-@@ -42,70 +38,6 @@
-                                                                         // ref-note {{dereferenced one-past-the-end}}
- }
- 
--/// Copied from constant-expression-cxx11.cpp
--namespace strlen {
--constexpr const char *a = "foo\0quux";
--  constexpr char b[] = "foo\0quux";
--  constexpr int f() { return 'u'; }
--  constexpr char c[] = { 'f', 'o', 'o', 0, 'q', f(), 'u', 'x', 0 };
--
--  static_assert(__builtin_strlen("foo") == 3, "");
--  static_assert(__builtin_strlen("foo\0quux") == 3, "");
--  static_assert(__builtin_strlen("foo\0quux" + 4) == 4, "");
--
--  constexpr bool check(const char *p) {
--    return __builtin_strlen(p) == 3 &&
--           __builtin_strlen(p + 1) == 2 &&
--           __builtin_strlen(p + 2) == 1 &&
--           __builtin_strlen(p + 3) == 0 &&
--           __builtin_strlen(p + 4) == 4 &&
--           __builtin_strlen(p + 5) == 3 &&
--           __builtin_strlen(p + 6) == 2 &&
--           __builtin_strlen(p + 7) == 1 &&
--           __builtin_strlen(p + 8) == 0;
--  }
--
--  static_assert(check(a), "");
--  static_assert(check(b), "");
--  static_assert(check(c), "");
--
--  constexpr int over1 = __builtin_strlen(a + 9); // expected-error {{constant expression}} \
--                                                 // expected-note {{one-past-the-end}} \
--                                                 // expected-note {{in call to}} \
--                                                 // ref-error {{constant expression}} \
--                                                 // ref-note {{one-past-the-end}}
--  constexpr int over2 = __builtin_strlen(b + 9); // expected-error {{constant expression}} \
--                                                 // expected-note {{one-past-the-end}} \
--                                                 // expected-note {{in call to}} \
--                                                 // ref-error {{constant expression}} \
--                                                 // ref-note {{one-past-the-end}}
--  constexpr int over3 = __builtin_strlen(c + 9); // expected-error {{constant expression}} \
--                                                 // expected-note {{one-past-the-end}} \
--                                                 // expected-note {{in call to}} \
--                                                 // ref-error {{constant expression}} \
--                                                 // ref-note {{one-past-the-end}}
--
--  constexpr int under1 = __builtin_strlen(a - 1); // expected-error {{constant expression}} \
--                                                  // expected-note {{cannot refer to element -1}} \
--                                                  // ref-error {{constant expression}} \
--                                                  // ref-note {{cannot refer to element -1}}
--  constexpr int under2 = __builtin_strlen(b - 1); // expected-error {{constant expression}} \
--                                                  // expected-note {{cannot refer to element -1}} \
--                                                  // ref-error {{constant expression}} \
--                                                  // ref-note {{cannot refer to element -1}}
--  constexpr int under3 = __builtin_strlen(c - 1); // expected-error {{constant expression}} \
--                                                  // expected-note {{cannot refer to element -1}} \
--                                                  // ref-error {{constant expression}} \
--                                                  // ref-note {{cannot refer to element -1}}
--
--  constexpr char d[] = { 'f', 'o', 'o' }; // no nul terminator.
--  constexpr int bad = __builtin_strlen(d); // expected-error {{constant expression}} \
--                                           // expected-note {{one-past-the-end}} \
--                                           // expected-note {{in call to}} \
--                                           // ref-error {{constant expression}} \
--                                           // ref-note {{one-past-the-end}}
--}
--
- namespace nan {
-   constexpr double NaN1 = __builtin_nan("");
- 
-@@ -164,12 +96,10 @@
-   char isfpclass_pos_1    [!__builtin_isfpclass(1.0f, 0x0008) ? 1 : -1]; // fcNegNormal
-   char isfpclass_pos_2    [__builtin_isfpclass(1.0L, 0x01F8) ? 1 : -1]; // fcFinite
-   char isfpclass_pos_3    [!__builtin_isfpclass(1.0, 0x0003) ? 1 : -1]; // fcSNan|fcQNan
--#ifndef __AVR__
-   char isfpclass_pdenorm_0[__builtin_isfpclass(1.0e-40f, 0x0080) ? 1 : -1]; // fcPosSubnormal
-   char isfpclass_pdenorm_1[__builtin_isfpclass(1.0e-310, 0x01F8) ? 1 : -1]; // fcFinite
-   char isfpclass_pdenorm_2[!__builtin_isfpclass(1.0e-40f, 0x003C) ? 1 : -1]; // fcNegative
-   char isfpclass_pdenorm_3[!__builtin_isfpclass(1.0e-310, 0x0207) ? 1 : -1]; // ~fcFinite
--#endif
-   char isfpclass_pzero_0  [__builtin_isfpclass(0.0f, 0x0060) ? 1 : -1]; // fcZero
-   char isfpclass_pzero_1  [__builtin_isfpclass(0.0, 0x01F8) ? 1 : -1]; // fcFinite
-   char isfpclass_pzero_2  [!__builtin_isfpclass(0.0L, 0x0020) ? 1 : -1]; // fcNegZero
-@@ -179,11 +109,9 @@
-   char isfpclass_nzero_2  [!__builtin_isfpclass(-0.0L, 0x0040) ? 1 : -1]; // fcPosZero
-   char isfpclass_nzero_3  [!__builtin_isfpclass(-0.0, 0x0003) ? 1 : -1]; // fcNan
-   char isfpclass_ndenorm_0[__builtin_isfpclass(-1.0e-40f, 0x0010) ? 1 : -1]; // fcNegSubnormal
--  char isfpclass_ndenorm_2[!__builtin_isfpclass(-1.0e-40f, 0x03C0) ? 1 : -1]; // fcPositive
--#ifndef __AVR__
-   char isfpclass_ndenorm_1[__builtin_isfpclass(-1.0e-310, 0x01F8) ? 1 : -1]; // fcFinite
-+  char isfpclass_ndenorm_2[!__builtin_isfpclass(-1.0e-40f, 0x03C0) ? 1 : -1]; // fcPositive
-   char isfpclass_ndenorm_3[!__builtin_isfpclass(-1.0e-310, 0x0207) ? 1 : -1]; // ~fcFinite
--#endif
-   char isfpclass_neg_0    [__builtin_isfpclass(-1.0, 0x0008) ? 1 : -1]; // fcNegNormal
-   char isfpclass_neg_1    [!__builtin_isfpclass(-1.0f, 0x00100) ? 1 : -1]; // fcPosNormal
-   char isfpclass_neg_2    [__builtin_isfpclass(-1.0L, 0x01F8) ? 1 : -1]; // fcFinite
-@@ -208,11 +136,9 @@
-   char classify_inf     [__builtin_fpclassify(-1, +1, -1, -1, -1, __builtin_inf())];
-   char classify_neg_inf [__builtin_fpclassify(-1, +1, -1, -1, -1, -__builtin_inf())];
-   char classify_normal  [__builtin_fpclassify(-1, -1, +1, -1, -1, 1.539)];
--#ifndef __AVR__
-   char classify_normal2 [__builtin_fpclassify(-1, -1, +1, -1, -1, 1e-307)];
-   char classify_denorm  [__builtin_fpclassify(-1, -1, -1, +1, -1, 1e-308)];
-   char classify_denorm2 [__builtin_fpclassify(-1, -1, -1, +1, -1, -1e-308)];
--#endif
-   char classify_zero    [__builtin_fpclassify(-1, -1, -1, -1, +1, 0.0)];
-   char classify_neg_zero[__builtin_fpclassify(-1, -1, -1, -1, +1, -0.0)];
-   char classify_subnorm [__builtin_fpclassify(-1, -1, -1, +1, -1, 1.0e-38f)];
-diff -ruN --strip-trailing-cr a/clang/test/CXX/drs/dr14xx.cpp b/clang/test/CXX/drs/dr14xx.cpp
---- a/clang/test/CXX/drs/dr14xx.cpp
-+++ b/clang/test/CXX/drs/dr14xx.cpp
-@@ -484,17 +484,8 @@
- #endif
- } // dr1467
- 
--namespace dr1473 { // dr1473: 18
--                   // NB: sup 1762, test reused there
--#if __cplusplus >= 201103L
--  float operator ""_E(const char *);
--  float operator ""E(const char *); // don't err on the lack of spaces even when the literal suffix identifier is invalid
--  // expected-warning@-1 {{user-defined literal suffixes not starting with '_' are reserved; no literal will invoke this operator}}
--#endif
--}
--
- namespace dr1479 { // dr1479: yes
--  int operator""_a(const char*, std::size_t = 0); // expected-error {{literal operator cannot have a default argument}}
-+  int operator"" _a(const char*, std::size_t = 0); // expected-error {{literal operator cannot have a default argument}}
- }
- 
- namespace dr1482 { // dr1482: yes
-diff -ruN --strip-trailing-cr a/clang/test/CXX/drs/dr17xx.cpp b/clang/test/CXX/drs/dr17xx.cpp
---- a/clang/test/CXX/drs/dr17xx.cpp
-+++ b/clang/test/CXX/drs/dr17xx.cpp
-@@ -139,11 +139,11 @@
- }
- 
- namespace dr1762 { // dr1762: 14
--                   // NB: reusing 1473 test
- #if __cplusplus >= 201103L
-   float operator ""_E(const char *);
-+  // expected-error@+2 {{invalid suffix on literal; C++11 requires a space between literal and identifier}}
-+  // expected-warning@+1 {{user-defined literal suffixes not starting with '_' are reserved; no literal will invoke this operator}}
-   float operator ""E(const char *);
--  // expected-warning@-1 {{user-defined literal suffixes not starting with '_' are reserved; no literal will invoke this operator}}
- #endif
- }
- 
-diff -ruN --strip-trailing-cr a/clang/test/CXX/drs/dr25xx.cpp b/clang/test/CXX/drs/dr25xx.cpp
---- a/clang/test/CXX/drs/dr25xx.cpp
-+++ b/clang/test/CXX/drs/dr25xx.cpp
-@@ -64,6 +64,8 @@
- 
- namespace dr2521 { // dr2521: 17
- #if __cplusplus >= 201103L
-+#pragma clang diagnostic push
-+#pragma clang diagnostic warning "-Wdeprecated-literal-operator"
- long double operator""      _\u03C0___(long double);
- // expected-warning@-1 {{identifier '_π___' preceded by whitespace in a literal operator declaration is deprecated}}
- // expected-warning@-2 {{user-defined literal suffixes containing '__' are reserved}}
-@@ -75,6 +77,7 @@
- using ::dr2521::operator"" _\u03C0___;
- using ::dr2521::operator""_div;
- // expected-warning@-2 {{identifier '_π___' preceded by whitespace in a literal operator declaration is deprecated}}
-+#pragma clang diagnostic pop
- #endif
- } // namespace dr2521
- 
-diff -ruN --strip-trailing-cr a/clang/test/CXX/lex/lex.literal/lex.ext/p1.cpp b/clang/test/CXX/lex/lex.literal/lex.ext/p1.cpp
---- a/clang/test/CXX/lex/lex.literal/lex.ext/p1.cpp
-+++ b/clang/test/CXX/lex/lex.literal/lex.ext/p1.cpp
-@@ -1,7 +1,7 @@
- // RUN: %clang_cc1 -fsyntax-only -std=c++11 -verify %s
- 
--void operator ""p31(long double); // expected-warning{{user-defined literal suffixes not starting with '_' are reserved}}
--void operator ""_p31(long double);
--long double operator ""pi(long double); // expected-warning{{user-defined literal suffixes not starting with '_' are reserved}}
-+void operator "" p31(long double); // expected-warning{{user-defined literal suffixes not starting with '_' are reserved}}
-+void operator "" _p31(long double);
-+long double operator "" pi(long double); // expected-warning{{user-defined literal suffixes not starting with '_' are reserved}}
- 
- float hexfloat = 0x1p31; // allow hexfloats
-diff -ruN --strip-trailing-cr a/clang/test/CXX/lex/lex.literal/lex.ext/p10.cpp b/clang/test/CXX/lex/lex.literal/lex.ext/p10.cpp
---- a/clang/test/CXX/lex/lex.literal/lex.ext/p10.cpp
-+++ b/clang/test/CXX/lex/lex.literal/lex.ext/p10.cpp
-@@ -1,14 +1,14 @@
- // RUN: %clang_cc1 -std=c++11 -verify %s
- 
- using size_t = decltype(sizeof(int));
--void operator ""wibble(const char *); // expected-warning {{user-defined literal suffixes not starting with '_' are reserved; no literal will invoke this operator}}
--void operator ""wibble(const char *, size_t); // expected-warning {{user-defined literal suffixes not starting with '_' are reserved; no literal will invoke this operator}}
-+void operator "" wibble(const char *); // expected-warning {{user-defined literal suffixes not starting with '_' are reserved; no literal will invoke this operator}}
-+void operator "" wibble(const char *, size_t); // expected-warning {{user-defined literal suffixes not starting with '_' are reserved; no literal will invoke this operator}}
- 
- template<typename T>
- void f() {
-   // A program containing a reserved ud-suffix is ill-formed.
-   123wibble; // expected-error {{invalid suffix 'wibble'}}
-   123.0wibble; // expected-error {{invalid suffix 'wibble'}}
--  const char *p = ""wibble; // expected-error {{cannot initialize a variable of type 'const char *' with an rvalue of type 'void'}}
--  const char *q = R"x("hello")x"wibble; // expected-error {{cannot initialize a variable of type 'const char *' with an rvalue of type 'void'}}
-+  const char *p = ""wibble; // expected-error {{invalid suffix on literal; C++11 requires a space between literal and identifier}} expected-error {{expected ';'}}
-+  const char *q = R"x("hello")x"wibble; // expected-error {{invalid suffix on literal; C++11 requires a space between literal and identifier}} expected-error {{expected ';'}}
- }
-diff -ruN --strip-trailing-cr a/clang/test/CXX/lex/lex.literal/lex.ext/p11.cpp b/clang/test/CXX/lex/lex.literal/lex.ext/p11.cpp
---- a/clang/test/CXX/lex/lex.literal/lex.ext/p11.cpp
-+++ b/clang/test/CXX/lex/lex.literal/lex.ext/p11.cpp
-@@ -6,16 +6,16 @@
- template<typename T> struct same_type<T, T> {};
- template<typename T> using X = T;
- template<typename CharT, X<CharT>...>
--int operator ""_x(); // expected-warning {{string literal operator templates are a GNU extension}}
-+int operator "" _x(); // expected-warning {{string literal operator templates are a GNU extension}}
- template<char...>
--double operator ""_x();
-+double operator "" _x();
- 
- auto a="string"_x;
- auto b=42_x;
- same_type<decltype(a), int> test_a;
- same_type<decltype(b), double> test_b;
- 
--char operator ""_x(const char *begin, size_t size);
-+char operator "" _x(const char *begin, size_t size);
- auto c="string"_x;
- auto d=L"string"_x;
- same_type<decltype(c), char> test_c;
-diff -ruN --strip-trailing-cr a/clang/test/CXX/lex/lex.literal/lex.ext/p3.cpp b/clang/test/CXX/lex/lex.literal/lex.ext/p3.cpp
---- a/clang/test/CXX/lex/lex.literal/lex.ext/p3.cpp
-+++ b/clang/test/CXX/lex/lex.literal/lex.ext/p3.cpp
-@@ -1,18 +1,18 @@
- // RUN: %clang_cc1 -fsyntax-only -std=c++11 -verify %s
- 
--int &operator ""_x1 (unsigned long long);
-+int &operator "" _x1 (unsigned long long);
- int &i1 = 0x123_x1;
- 
--double &operator ""_x1 (const char *);
-+double &operator "" _x1 (const char *);
- int &i2 = 45_x1;
- 
--template<char...> char &operator ""_x1 ();
-+template<char...> char &operator "" _x1 ();
- int &i3 = 0377_x1;
- 
- int &i4 = 90000000000000000000000000000000000000000000000_x1; // expected-error {{integer literal is too large to be represented in any integer type}}
- 
--double &operator ""_x2 (const char *);
-+double &operator "" _x2 (const char *);
- double &i5 = 123123123123123123123123123123123123123123123_x2;
- 
--template<char...Cs> constexpr int operator ""_x3() { return sizeof...(Cs); }
-+template<char...Cs> constexpr int operator "" _x3() { return sizeof...(Cs); }
- static_assert(123456789012345678901234567890123456789012345678901234567890_x3 == 60, "");
-diff -ruN --strip-trailing-cr a/clang/test/CXX/lex/lex.literal/lex.ext/p4.cpp b/clang/test/CXX/lex/lex.literal/lex.ext/p4.cpp
---- a/clang/test/CXX/lex/lex.literal/lex.ext/p4.cpp
-+++ b/clang/test/CXX/lex/lex.literal/lex.ext/p4.cpp
-@@ -1,18 +1,18 @@
- // RUN: %clang_cc1 -fsyntax-only -std=c++11 -verify %s
- 
--int &operator ""_x1 (long double);
-+int &operator "" _x1 (long double);
- int &i1 = 0.123_x1;
- 
--double &operator ""_x1 (const char *);
-+double &operator "" _x1 (const char *);
- int &i2 = 45._x1;
- 
--template<char...> char &operator ""_x1 ();
-+template<char...> char &operator "" _x1 ();
- int &i3 = 0377e-1_x1;
- 
- int &i4 = 1e1000000_x1; // expected-warning {{too large for type 'long double'}}
- 
--double &operator ""_x2 (const char *);
-+double &operator "" _x2 (const char *);
- double &i5 = 1e1000000_x2;
- 
--template<char...Cs> constexpr int operator ""_x3() { return sizeof...(Cs); }
-+template<char...Cs> constexpr int operator "" _x3() { return sizeof...(Cs); }
- static_assert(1e1000000_x3 == 9, "");
-diff -ruN --strip-trailing-cr a/clang/test/CXX/lex/lex.literal/lex.ext/p5.cpp b/clang/test/CXX/lex/lex.literal/lex.ext/p5.cpp
---- a/clang/test/CXX/lex/lex.literal/lex.ext/p5.cpp
-+++ b/clang/test/CXX/lex/lex.literal/lex.ext/p5.cpp
-@@ -3,19 +3,19 @@
- 
- using size_t = decltype(sizeof(int));
- 
--int &operator ""_x1 (const char *);
--double &operator ""_x1 (const char *, size_t);
-+int &operator "" _x1 (const char *);
-+double &operator "" _x1 (const char *, size_t);
- double &i1 = "foo"_x1;
- #if __cplusplus >= 202002L
- using char8 = float;
--float &operator ""_x1 (const char8_t *, size_t);
-+float &operator "" _x1 (const char8_t *, size_t);
- #else
- using char8 = double;
- #endif
- char8 &i2 = u8"foo"_x1;
- double &i3 = L"foo"_x1; // expected-error {{no matching literal operator for call to 'operator""_x1' with arguments of types 'const wchar_t *' and 'unsigned long'}}
- 
--char &operator ""_x1(const wchar_t *, size_t);
-+char &operator "" _x1(const wchar_t *, size_t);
- char &i4 = L"foo"_x1; // ok
- double &i5 = R"(foo)"_x1; // ok
- char8 &i6 = u\
-diff -ruN --strip-trailing-cr a/clang/test/CXX/lex/lex.literal/lex.ext/p6.cpp b/clang/test/CXX/lex/lex.literal/lex.ext/p6.cpp
---- a/clang/test/CXX/lex/lex.literal/lex.ext/p6.cpp
-+++ b/clang/test/CXX/lex/lex.literal/lex.ext/p6.cpp
-@@ -2,13 +2,13 @@
- 
- using size_t = decltype(sizeof(int));
- 
--int &operator ""_x1 (const char *);
-+int &operator "" _x1 (const char *);
- double &i1 = 'a'_x1; // expected-error {{no matching literal operator}}
--double &operator ""_x1 (wchar_t);
-+double &operator "" _x1 (wchar_t);
- double &i2 = L'a'_x1;
- double &i3 = 'a'_x1; // expected-error {{no matching literal operator}}
--double &i4 = operator""_x1('a'); // ok
-+double &i4 = operator"" _x1('a'); // ok
- 
--char &operator ""_x1(char16_t);
-+char &operator "" _x1(char16_t);
- char &i5 = u'a'_x1; // ok
- double &i6 = L'a'_x1; // ok
-diff -ruN --strip-trailing-cr a/clang/test/CXX/lex/lex.literal/lex.ext/p7.cpp b/clang/test/CXX/lex/lex.literal/lex.ext/p7.cpp
---- a/clang/test/CXX/lex/lex.literal/lex.ext/p7.cpp
-+++ b/clang/test/CXX/lex/lex.literal/lex.ext/p7.cpp
-@@ -10,9 +10,9 @@
- 
- namespace std_example {
- 
--long double operator ""_w(long double);
--std::string operator ""_w(const char16_t*, size_t);
--unsigned operator ""_w(const char*);
-+long double operator "" _w(long double);
-+std::string operator "" _w(const char16_t*, size_t);
-+unsigned operator "" _w(const char*);
- int main() {
-   auto v1 = 1.2_w;    // calls operator""_w(1.2L)
-   auto v2 = u"one"_w; // calls operator""_w(u"one", 3)
-diff -ruN --strip-trailing-cr a/clang/test/CXX/lex/lex.literal/lex.ext/p8.cpp b/clang/test/CXX/lex/lex.literal/lex.ext/p8.cpp
---- a/clang/test/CXX/lex/lex.literal/lex.ext/p8.cpp
-+++ b/clang/test/CXX/lex/lex.literal/lex.ext/p8.cpp
-@@ -1,7 +1,7 @@
- // RUN: %clang_cc1 -std=c++11 -verify %s
- 
- using size_t = decltype(sizeof(int));
--constexpr const char *operator ""_id(const char *p, size_t) { return p; }
-+constexpr const char *operator "" _id(const char *p, size_t) { return p; }
- constexpr const char *s = "foo"_id "bar" "baz"_id "quux";
- 
- constexpr bool streq(const char *p, const char *q) {
-@@ -9,8 +9,8 @@
- }
- static_assert(streq(s, "foobarbazquux"), "");
- 
--constexpr const char *operator ""_trim(const char *p, size_t n) {
--  return *p == ' ' ? operator ""_trim(p + 1, n - 1) : p;
-+constexpr const char *operator "" _trim(const char *p, size_t n) {
-+  return *p == ' ' ? operator "" _trim(p + 1, n - 1) : p;
- }
- constexpr const char *t = "   " " "_trim "  foo";
- static_assert(streq(t, "foo"), "");
-diff -ruN --strip-trailing-cr a/clang/test/CXX/lex/lex.literal/lex.ext/p9.cpp b/clang/test/CXX/lex/lex.literal/lex.ext/p9.cpp
---- a/clang/test/CXX/lex/lex.literal/lex.ext/p9.cpp
-+++ b/clang/test/CXX/lex/lex.literal/lex.ext/p9.cpp
-@@ -1,7 +1,7 @@
- // RUN: %clang_cc1 -std=c++11 -fsyntax-only -verify %s
- 
- using size_t = decltype(sizeof(int));
--void operator ""_x(const wchar_t *, size_t);
-+void operator "" _x(const wchar_t *, size_t);
- 
- namespace std_example {
- 
-diff -ruN --strip-trailing-cr a/clang/test/CXX/over/over.oper/over.literal/p2.cpp b/clang/test/CXX/over/over.oper/over.literal/p2.cpp
---- a/clang/test/CXX/over/over.oper/over.literal/p2.cpp
-+++ b/clang/test/CXX/over/over.oper/over.literal/p2.cpp
-@@ -1,43 +1,43 @@
- // RUN: %clang_cc1 -std=c++11 %s -verify
- 
--void operator ""_a(const char *);
-+void operator "" _a(const char *);
- 
- namespace N {
--  using ::operator ""_a;
-+  using ::operator "" _a;
- 
--  void operator ""_b(const char *);
-+  void operator "" _b(const char *);
- }
- 
--using N::operator ""_b;
-+using N::operator "" _b;
- 
- class C {
--  void operator ""_c(const char *); // expected-error {{must be in a namespace or global scope}}
-+  void operator "" _c(const char *); // expected-error {{must be in a namespace or global scope}}
- 
--  static void operator ""_c(unsigned long long); // expected-error {{must be in a namespace or global scope}}
-+  static void operator "" _c(unsigned long long); // expected-error {{must be in a namespace or global scope}}
- 
--  friend void operator ""_d(const char *);
-+  friend void operator "" _d(const char *);
- };
- 
--int operator ""_e; // expected-error {{cannot be the name of a variable}}
-+int operator "" _e; // expected-error {{cannot be the name of a variable}}
- 
- void f() {
--  int operator ""_f; // expected-error {{cannot be the name of a variable}}
-+  int operator "" _f; // expected-error {{cannot be the name of a variable}}
- }
- 
- extern "C++" {
--  void operator ""_g(const char *);
-+  void operator "" _g(const char *);
- }
- 
--template<char...> void operator ""_h() {}
-+template<char...> void operator "" _h() {}
- 
--template<> void operator ""_h<'a', 'b', 'c'>() {}
-+template<> void operator "" _h<'a', 'b', 'c'>() {}
- 
--template void operator ""_h<'a', 'b', 'c', 'd'>();
-+template void operator "" _h<'a', 'b', 'c', 'd'>();
- 
- namespace rdar13605348 {
- 
- class C {
--  double operator""_x(long double value) { return double(value); } // expected-error{{literal operator 'operator""_x' must be in a namespace or global scope}}
-+  double operator"" _x(long double value) { return double(value); } // expected-error{{literal operator 'operator""_x' must be in a namespace or global scope}}
-   double value() { return 3.2_x; } // expected-error{{no matching literal operator for call to}}
- };
- 
-diff -ruN --strip-trailing-cr a/clang/test/CXX/over/over.oper/over.literal/p3.cpp b/clang/test/CXX/over/over.oper/over.literal/p3.cpp
---- a/clang/test/CXX/over/over.oper/over.literal/p3.cpp
-+++ b/clang/test/CXX/over/over.oper/over.literal/p3.cpp
-@@ -3,38 +3,38 @@
- using size_t = decltype(sizeof(int));
- 
- // Acceptable parameter declarations
--char operator ""_a(const char *);
--char operator ""_a(const char []);
--char operator ""_a(unsigned long long);
--char operator ""_a(long double);
--char operator ""_a(char);
--char operator ""_a(const volatile char);
--char operator ""_a(wchar_t);
--char operator ""_a(char16_t);
--char operator ""_a(char32_t);
--char operator ""_a(const char *, size_t);
--char operator ""_a(const wchar_t *, size_t);
--char operator ""_a(const char16_t *, size_t);
--char operator ""_a(const char32_t *, size_t);
--char operator ""_a(const char [32], size_t);
-+char operator "" _a(const char *);
-+char operator "" _a(const char []);
-+char operator "" _a(unsigned long long);
-+char operator "" _a(long double);
-+char operator "" _a(char);
-+char operator "" _a(const volatile char);
-+char operator "" _a(wchar_t);
-+char operator "" _a(char16_t);
-+char operator "" _a(char32_t);
-+char operator "" _a(const char *, size_t);
-+char operator "" _a(const wchar_t *, size_t);
-+char operator "" _a(const char16_t *, size_t);
-+char operator "" _a(const char32_t *, size_t);
-+char operator "" _a(const char [32], size_t);
- 
- // Unacceptable parameter declarations
--char operator ""_b(); // expected-error {{parameter}}
--char operator ""_b(const wchar_t *); // expected-error {{parameter}}
--char operator ""_b(long long); // expected-error {{parameter}}
--char operator ""_b(double); // expected-error {{parameter}}
--char operator ""_b(short); // expected-error {{parameter}}
--char operator ""_a(char, int = 0); // expected-error {{parameter}}
--char operator ""_b(unsigned short); // expected-error {{parameter}}
--char operator ""_b(signed char); // expected-error {{parameter}}
--char operator ""_b(unsigned char); // expected-error {{parameter}}
--char operator ""_b(const short *, size_t); // expected-error {{parameter}}
--char operator ""_b(const unsigned short *, size_t); // expected-error {{parameter}}
--char operator ""_b(const signed char *, size_t); // expected-error {{parameter}}
--char operator ""_b(const unsigned char *, size_t); // expected-error {{parameter}}
--char operator ""_a(const volatile char *, size_t); // expected-error {{parameter}}
--char operator ""_a(volatile wchar_t *, size_t); // expected-error {{parameter}}
--char operator ""_a(char16_t *, size_t); // expected-error {{parameter}}
--char operator ""_a(const char32_t *, size_t, bool = false); // expected-error {{parameter}}
--char operator ""_a(const char *, signed long); // expected-error {{parameter}}
--char operator ""_a(const char *, size_t = 0); // expected-error {{default argument}}
-+char operator "" _b(); // expected-error {{parameter}}
-+char operator "" _b(const wchar_t *); // expected-error {{parameter}}
-+char operator "" _b(long long); // expected-error {{parameter}}
-+char operator "" _b(double); // expected-error {{parameter}}
-+char operator "" _b(short); // expected-error {{parameter}}
-+char operator "" _a(char, int = 0); // expected-error {{parameter}}
-+char operator "" _b(unsigned short); // expected-error {{parameter}}
-+char operator "" _b(signed char); // expected-error {{parameter}}
-+char operator "" _b(unsigned char); // expected-error {{parameter}}
-+char operator "" _b(const short *, size_t); // expected-error {{parameter}}
-+char operator "" _b(const unsigned short *, size_t); // expected-error {{parameter}}
-+char operator "" _b(const signed char *, size_t); // expected-error {{parameter}}
-+char operator "" _b(const unsigned char *, size_t); // expected-error {{parameter}}
-+char operator "" _a(const volatile char *, size_t); // expected-error {{parameter}}
-+char operator "" _a(volatile wchar_t *, size_t); // expected-error {{parameter}}
-+char operator "" _a(char16_t *, size_t); // expected-error {{parameter}}
-+char operator "" _a(const char32_t *, size_t, bool = false); // expected-error {{parameter}}
-+char operator "" _a(const char *, signed long); // expected-error {{parameter}}
-+char operator "" _a(const char *, size_t = 0); // expected-error {{default argument}}
-diff -ruN --strip-trailing-cr a/clang/test/CXX/over/over.oper/over.literal/p5.cpp b/clang/test/CXX/over/over.oper/over.literal/p5.cpp
---- a/clang/test/CXX/over/over.oper/over.literal/p5.cpp
-+++ b/clang/test/CXX/over/over.oper/over.literal/p5.cpp
-@@ -3,20 +3,20 @@
- using size_t = decltype(sizeof(int));
- template<char...> struct S {};
- 
--template<char...> void operator ""_a();
--template<char... C> S<C...> operator ""_a();
-+template<char...> void operator "" _a();
-+template<char... C> S<C...> operator "" _a();
- 
- template<typename T> struct U {
--  friend int operator ""_a(const char *, size_t);
-+  friend int operator "" _a(const char *, size_t);
-   // FIXME: It's not entirely clear whether this is intended to be legal.
--  friend U operator ""_a(const T *, size_t); // expected-error {{parameter}}
-+  friend U operator "" _a(const T *, size_t); // expected-error {{parameter}}
- };
- template<char...> struct V {
--  friend void operator ""_b(); // expected-error {{parameters}}
-+  friend void operator "" _b(); // expected-error {{parameters}}
- };
- 
--template<char... C, int N = 0> void operator ""_b(); // expected-error {{template}}
--template<char... C> void operator ""_b(int N = 0); // expected-error {{template}}
--template<char, char...> void operator ""_b(); // expected-error {{template}}
--template<typename T> T operator ""_b(const char *); // expected-error {{template}}
--template<typename T> int operator ""_b(const T *, size_t); // expected-error {{template}}
-+template<char... C, int N = 0> void operator "" _b(); // expected-error {{template}}
-+template<char... C> void operator "" _b(int N = 0); // expected-error {{template}}
-+template<char, char...> void operator "" _b(); // expected-error {{template}}
-+template<typename T> T operator "" _b(const char *); // expected-error {{template}}
-+template<typename T> int operator "" _b(const T *, size_t); // expected-error {{template}}
-diff -ruN --strip-trailing-cr a/clang/test/CXX/over/over.oper/over.literal/p6.cpp b/clang/test/CXX/over/over.oper/over.literal/p6.cpp
---- a/clang/test/CXX/over/over.oper/over.literal/p6.cpp
-+++ b/clang/test/CXX/over/over.oper/over.literal/p6.cpp
-@@ -1,15 +1,15 @@
- // RUN: %clang_cc1 -std=c++11 %s -verify
- 
- // expected-note@+1 {{extern "C" language linkage specification begins here}}
--extern "C" void operator ""_a(const char *); // expected-error {{must have C++ linkage}}
--extern "C" template<char...> void operator ""_b(); // expected-error {{must have C++ linkage}}
-+extern "C" void operator "" _a(const char *); // expected-error {{must have C++ linkage}}
-+extern "C" template<char...> void operator "" _b(); // expected-error {{must have C++ linkage}}
- // expected-note@-1 {{extern "C" language linkage specification begins here}}
- 
- extern "C" { // expected-note 4 {{extern "C" language linkage specification begins here}}
--  void operator ""_c(const char *); // expected-error {{must have C++ linkage}}
--  template<char...> void operator ""_d(); // expected-error {{must have C++ linkage}}
-+  void operator "" _c(const char *); // expected-error {{must have C++ linkage}}
-+  template<char...> void operator "" _d(); // expected-error {{must have C++ linkage}}
-   namespace N {
--    void operator ""_e(const char *); // expected-error {{must have C++ linkage}}
--    template<char...> void operator ""_f(); // expected-error {{must have C++ linkage}}
-+    void operator "" _e(const char *); // expected-error {{must have C++ linkage}}
-+    template<char...> void operator "" _f(); // expected-error {{must have C++ linkage}}
-   }
- }
-diff -ruN --strip-trailing-cr a/clang/test/CXX/over/over.oper/over.literal/p7.cpp b/clang/test/CXX/over/over.oper/over.literal/p7.cpp
---- a/clang/test/CXX/over/over.oper/over.literal/p7.cpp
-+++ b/clang/test/CXX/over/over.oper/over.literal/p7.cpp
-@@ -1,17 +1,17 @@
- // RUN: %clang_cc1 -std=c++11 %s -verify
- // expected-no-diagnostics
- 
--constexpr int operator ""_a(const char *c) {
-+constexpr int operator "" _a(const char *c) {
-   return c[0];
- }
- 
--static_assert(operator ""_a("foo") == 'f', "");
-+static_assert(operator "" _a("foo") == 'f', "");
- 
- void puts(const char *);
--static inline void operator ""_puts(const char *c) {
-+static inline void operator "" _puts(const char *c) {
-   puts(c);
- }
- void f() {
--  operator ""_puts("foo");
--  operator ""_puts("bar");
-+  operator "" _puts("foo");
-+  operator "" _puts("bar");
- }
-diff -ruN --strip-trailing-cr a/clang/test/CXX/over/over.oper/over.literal/p8.cpp b/clang/test/CXX/over/over.oper/over.literal/p8.cpp
---- a/clang/test/CXX/over/over.oper/over.literal/p8.cpp
-+++ b/clang/test/CXX/over/over.oper/over.literal/p8.cpp
-@@ -5,13 +5,13 @@
-   using size_t = decltype(sizeof(int));
- }
- 
--void operator ""_km(long double); // ok
--string operator ""_i18n(const char*, std::size_t); // ok
--template<char...> int operator ""\u03C0(); // ok, UCN for lowercase pi // expected-warning {{reserved}}
--float operator ""E(const char *); // expected-warning {{reserved}}
--float operator " "B(const char *); // expected-error {{must be '""'}} expected-warning {{reserved}}
-+void operator "" _km(long double); // ok
-+string operator "" _i18n(const char*, std::size_t); // ok
-+template<char...> int operator "" \u03C0(); // ok, UCN for lowercase pi // expected-warning {{reserved}}
-+float operator ""E(const char *); // expected-error {{invalid suffix on literal}} expected-warning {{reserved}}
-+float operator " " B(const char *); // expected-error {{must be '""'}} expected-warning {{reserved}}
- string operator "" 5X(const char *, std::size_t); // expected-error {{expected identifier}}
--double operator ""_miles(double); // expected-error {{parameter}}
--template<char...> int operator ""j(const char*); // expected-error {{template}}
-+double operator "" _miles(double); // expected-error {{parameter}}
-+template<char...> int operator "" j(const char*); // expected-error {{template}}
- 
- float operator ""_E(const char *);
-diff -ruN --strip-trailing-cr a/clang/test/CodeGenCXX/cxx11-user-defined-literal.cpp b/clang/test/CodeGenCXX/cxx11-user-defined-literal.cpp
---- a/clang/test/CodeGenCXX/cxx11-user-defined-literal.cpp
-+++ b/clang/test/CodeGenCXX/cxx11-user-defined-literal.cpp
-@@ -2,12 +2,12 @@
- 
- struct S { S(); ~S(); S(const S &); void operator()(int); };
- using size_t = decltype(sizeof(int));
--S operator""_x(const char *, size_t);
--S operator""_y(wchar_t);
--S operator""_z(unsigned long long);
--S operator""_f(long double);
--S operator""_r(const char *);
--template<char...Cs> S operator""_t() { return S(); }
-+S operator"" _x(const char *, size_t);
-+S operator"" _y(wchar_t);
-+S operator"" _z(unsigned long long);
-+S operator"" _f(long double);
-+S operator"" _r(const char *);
-+template<char...Cs> S operator"" _t() { return S(); }
- 
- // CHECK: @[[s_foo:.*]] = {{.*}} constant [4 x i8] c"foo\00"
- // CHECK: @[[s_bar:.*]] = {{.*}} constant [4 x i8] c"bar\00"
-@@ -47,7 +47,7 @@
- // CHECK: define {{.*}} @_Zli2_tIJLc48ELc120ELc49ELc50ELc51ELc52ELc53ELc54ELc55ELc56EEE1Sv(
- 
- template<typename T> auto g(T t) -> decltype("foo"_x(t)) { return "foo"_x(t); }
--template<typename T> auto i(T t) -> decltype(operator""_x("foo", 3)(t)) { return operator""_x("foo", 3)(t); }
-+template<typename T> auto i(T t) -> decltype(operator"" _x("foo", 3)(t)) { return operator"" _x("foo", 3)(t); }
- 
- void h() {
-   g(42);
-diff -ruN --strip-trailing-cr a/clang/test/CodeGenCXX/debug-info-function-context.cpp b/clang/test/CodeGenCXX/debug-info-function-context.cpp
---- a/clang/test/CodeGenCXX/debug-info-function-context.cpp
-+++ b/clang/test/CodeGenCXX/debug-info-function-context.cpp
-@@ -1,5 +1,5 @@
- // RUN: %clang_cc1 -emit-llvm -debug-info-kind=limited -triple x86_64-pc-linux-gnu %s \
--// RUN:     -dwarf-version=5 -main-file-name debug-info-function-context.cpp  -o - | FileCheck %s
-+// RUN:     -dwarf-version=5 -main-file-name %s  -o - | FileCheck %s
- 
- struct C {
-   void member_function();
-@@ -31,8 +31,8 @@
- 
- // The first DIFile is for the CU, the second is what everything else uses.
- // We're using DWARF v5 so both should have MD5 checksums.
--// CHECK: !DIFile(filename: "{{.*}}context.cpp",{{.*}} checksumkind: CSK_MD5, checksum: [[CKSUM:".*"]]
--// CHECK: ![[FILE:[0-9]+]] = !DIFile(filename: "{{.*}}context.cpp",{{.*}} checksumkind: CSK_MD5, checksum: [[CKSUM]]
-+// CHECK: !DIFile(filename: "{{.*}}context.cpp",{{.*}} checksumkind: CSK_MD5
-+// CHECK: ![[FILE:[0-9]+]] = !DIFile(filename: "{{.*}}context.cpp",{{.*}} checksumkind: CSK_MD5
- // CHECK: ![[C:[0-9]+]] = distinct !DICompositeType(tag: DW_TAG_structure_type, name: "C",
- // CHECK: ![[NS:.*]] = !DINamespace(name: "ns"
- // CHECK: !DISubprogram(name: "member_function",{{.*}} scope: ![[C]],{{.*}} DISPFlagDefinition
-diff -ruN --strip-trailing-cr a/clang/test/CodeGenCXX/mangle-ms-cxx11.cpp b/clang/test/CodeGenCXX/mangle-ms-cxx11.cpp
---- a/clang/test/CodeGenCXX/mangle-ms-cxx11.cpp
-+++ b/clang/test/CodeGenCXX/mangle-ms-cxx11.cpp
-@@ -210,7 +210,7 @@
- // CHECK-DAG: @"?foo@A@PR19361@@QIHAEXXZ"
- }
- 
--int operator""_deg(long double) { return 0; }
-+int operator"" _deg(long double) { return 0; }
- // CHECK-DAG: @"??__K_deg@@YAHO@Z"
- 
- template <char...>
-diff -ruN --strip-trailing-cr a/clang/test/FixIt/fixit-c++11.cpp b/clang/test/FixIt/fixit-c++11.cpp
---- a/clang/test/FixIt/fixit-c++11.cpp
-+++ b/clang/test/FixIt/fixit-c++11.cpp
-@@ -1,4 +1,4 @@
--// RUN: %clang_cc1 -verify -std=c++11 -Wno-anonymous-pack-parens -Wno-deprecated-literal-operator %s
-+// RUN: %clang_cc1 -verify -std=c++11 -Wno-anonymous-pack-parens %s
- // RUN: cp %s %t
- // RUN: not %clang_cc1 -x c++ -std=c++11 -fixit %t
- // RUN: %clang_cc1 -Wall -pedantic -x c++ -std=c++11 %t
-@@ -68,9 +68,9 @@
- }
- 
- #define bar "bar"
--const char *p = "foo" bar;
-+const char *p = "foo"bar; // expected-error {{requires a space between}}
- #define ord - '0'
--int k = '4' ord;
-+int k = '4'ord; // expected-error {{requires a space between}}
- 
- void operator"x" _y(char); // expected-error {{must be '""'}}
- void operator L"" _z(char); // expected-error {{encoding prefix}}
-diff -ruN --strip-trailing-cr a/clang/test/OpenMP/amdgcn_ldbl_check.cpp b/clang/test/OpenMP/amdgcn_ldbl_check.cpp
---- a/clang/test/OpenMP/amdgcn_ldbl_check.cpp
-+++ b/clang/test/OpenMP/amdgcn_ldbl_check.cpp
-@@ -6,7 +6,7 @@
- 
- void print(double);
- 
--constexpr double operator""_X (long double a)
-+constexpr double operator"" _X (long double a)
- {
- 	return (double)a;
- }
-diff -ruN --strip-trailing-cr a/clang/test/PCH/cxx11-user-defined-literals.cpp b/clang/test/PCH/cxx11-user-defined-literals.cpp
---- a/clang/test/PCH/cxx11-user-defined-literals.cpp
-+++ b/clang/test/PCH/cxx11-user-defined-literals.cpp
-@@ -9,7 +9,7 @@
- #define HEADER_INCLUDED
- 
- using size_t = decltype(sizeof(int));
--int operator""_foo(const char *p, size_t);
-+int operator"" _foo(const char *p, size_t);
- 
- template<typename T> auto f(T t) -> decltype(t + ""_foo) { return 0; }
- 
-diff -ruN --strip-trailing-cr a/clang/test/Parser/cxx0x-literal-operators.cpp b/clang/test/Parser/cxx0x-literal-operators.cpp
---- a/clang/test/Parser/cxx0x-literal-operators.cpp
-+++ b/clang/test/Parser/cxx0x-literal-operators.cpp
-@@ -1,8 +1,8 @@
- // RUN: %clang_cc1 -fsyntax-only -verify -std=c++11 %s
- 
- void operator "" (const char *); // expected-error {{expected identifier}}
--void operator "k"foo(const char *); // \
-+void operator "k" foo(const char *); // \
-   expected-error {{string literal after 'operator' must be '""'}} \
-   expected-warning{{user-defined literal suffixes not starting with '_' are reserved}}
--void operator ""tester (const char *); // \
-+void operator "" tester (const char *); // \
-   expected-warning{{user-defined literal suffixes not starting with '_' are reserved}}
-diff -ruN --strip-trailing-cr a/clang/test/Parser/cxx11-user-defined-literals.cpp b/clang/test/Parser/cxx11-user-defined-literals.cpp
---- a/clang/test/Parser/cxx11-user-defined-literals.cpp
-+++ b/clang/test/Parser/cxx11-user-defined-literals.cpp
-@@ -38,19 +38,19 @@
- #endif
- 
- // But they can appear in expressions.
--constexpr char operator""_id(char c) { return c; }
--constexpr wchar_t operator""_id(wchar_t c) { return c; }
--constexpr char16_t operator""_id(char16_t c) { return c; }
--constexpr char32_t operator""_id(char32_t c) { return c; }
-+constexpr char operator"" _id(char c) { return c; }
-+constexpr wchar_t operator"" _id(wchar_t c) { return c; }
-+constexpr char16_t operator"" _id(char16_t c) { return c; }
-+constexpr char32_t operator"" _id(char32_t c) { return c; }
- 
- using size_t = decltype(sizeof(int));
--constexpr const char operator""_id(const char *p, size_t n) { return *p; }
--constexpr const wchar_t operator""_id(const wchar_t *p, size_t n) { return *p; }
--constexpr const char16_t operator""_id(const char16_t *p, size_t n) { return *p; }
--constexpr const char32_t operator""_id(const char32_t *p, size_t n) { return *p; }
-+constexpr const char operator"" _id(const char *p, size_t n) { return *p; }
-+constexpr const wchar_t operator"" _id(const wchar_t *p, size_t n) { return *p; }
-+constexpr const char16_t operator"" _id(const char16_t *p, size_t n) { return *p; }
-+constexpr const char32_t operator"" _id(const char32_t *p, size_t n) { return *p; }
- 
--constexpr unsigned long long operator""_id(unsigned long long n) { return n; }
--constexpr long double operator""_id(long double d) { return d; }
-+constexpr unsigned long long operator"" _id(unsigned long long n) { return n; }
-+constexpr long double operator"" _id(long double d) { return d; }
- 
- template<int n> struct S {};
- S<"a"_id> sa;
-@@ -96,20 +96,20 @@
- // Make sure we handle more interesting ways of writing a string literal which
- // is "" in translation phase 7.
- void operator "\
--"_foo(unsigned long long); // ok
-+" _foo(unsigned long long); // ok
- 
--void operator R"xyzzy()xyzzy"_foo(long double); // ok
-+void operator R"xyzzy()xyzzy" _foo(long double); // ok
- 
--void operator"" "" R"()" ""_foo(const char *); // ok
-+void operator"" "" R"()" "" _foo(const char *); // ok
- 
- void operator ""_no_space(const char *); // ok
- 
- // Ensure we diagnose the bad cases.
--void operator "\0"_non_empty(const char *); // expected-error {{must be '""'}}
--void operator L""_not_char(const char *); // expected-error {{cannot have an encoding prefix}}
-+void operator "\0" _non_empty(const char *); // expected-error {{must be '""'}}
-+void operator L"" _not_char(const char *); // expected-error {{cannot have an encoding prefix}}
- void operator "" ""
- U"" // expected-error {{cannot have an encoding prefix}}
--""_also_not_char(const char *);
-+"" _also_not_char(const char *);
- void operator "" u8"" "\u0123" "hello"_all_of_the_things ""(const char*); // expected-error {{must be '""'}}
- 
- // Make sure we treat UCNs and UTF-8 as equivalent.
-diff -ruN --strip-trailing-cr a/clang/test/SemaCXX/cxx11-ast-print.cpp b/clang/test/SemaCXX/cxx11-ast-print.cpp
---- a/clang/test/SemaCXX/cxx11-ast-print.cpp
-+++ b/clang/test/SemaCXX/cxx11-ast-print.cpp
-@@ -1,22 +1,22 @@
- // RUN: %clang_cc1 -std=c++11 -ast-print %s | FileCheck %s
- 
- // CHECK: auto operator""_foo(const char *p, decltype(sizeof(int))) -> decltype(nullptr);
--auto operator""_foo(const char *p, decltype(sizeof(int))) -> decltype(nullptr);
-+auto operator"" _foo(const char *p, decltype(sizeof(int))) -> decltype(nullptr);
- 
- // CHECK: decltype(""_foo) operator""_bar(unsigned long long);
--decltype(""_foo) operator""_bar(unsigned long long);
-+decltype(""_foo) operator"" _bar(unsigned long long);
- 
- // CHECK: decltype(42_bar) operator""_baz(long double);
--decltype(42_bar) operator""_baz(long double);
-+decltype(42_bar) operator"" _baz(long double);
- 
- // CHECK: decltype(4.5_baz) operator""_baz(char);
--decltype(4.5_baz) operator""_baz(char);
-+decltype(4.5_baz) operator"" _baz(char);
- 
- // CHECK: const char *operator""_quux(const char *);
--const char *operator""_quux(const char *);
-+const char *operator"" _quux(const char *);
- 
- // CHECK: template <char ...> const char *operator""_fritz();
--template<char...> const char *operator""_fritz();
-+template<char...> const char *operator"" _fritz();
- 
- // CHECK: const char *p1 = "bar1"_foo;
- const char *p1 = "bar1"_foo;
-@@ -39,7 +39,7 @@
- // CHECK: const char *p10 = 3.300e+15_fritz;
- const char *p10 = 3.300e+15_fritz;
- 
--template <class C, C...> const char *operator""_suffix();
-+template <class C, C...> const char *operator"" _suffix();
- // CHECK: const char *PR23120 = operator""_suffix<char32_t, U'\U00010437'>();
- const char *PR23120 = U"𐐷"_suffix;
- 
-diff -ruN --strip-trailing-cr a/clang/test/SemaCXX/cxx11-user-defined-literals-unused.cpp b/clang/test/SemaCXX/cxx11-user-defined-literals-unused.cpp
---- a/clang/test/SemaCXX/cxx11-user-defined-literals-unused.cpp
-+++ b/clang/test/SemaCXX/cxx11-user-defined-literals-unused.cpp
-@@ -1,8 +1,8 @@
- // RUN: %clang_cc1 -std=c++11 -verify %s -Wunused
- 
- namespace {
--double operator""_x(long double value) { return double(value); }
--int operator""_ii(long double value) { return int(value); } // expected-warning {{not needed and will not be emitted}}
-+double operator"" _x(long double value) { return double(value); }
-+int operator"" _ii(long double value) { return int(value); } // expected-warning {{not needed and will not be emitted}}
- }
- 
- namespace rdar13589856 {
-diff -ruN --strip-trailing-cr a/clang/test/SemaCXX/cxx11-user-defined-literals.cpp b/clang/test/SemaCXX/cxx11-user-defined-literals.cpp
---- a/clang/test/SemaCXX/cxx11-user-defined-literals.cpp
-+++ b/clang/test/SemaCXX/cxx11-user-defined-literals.cpp
-@@ -6,18 +6,18 @@
-   CharStr, WideStr, Char16Str, Char32Str,
-   Integer, Floating, Raw, Template
- };
--constexpr LitKind operator""_kind(char p) { return LitKind::Char; }
--constexpr LitKind operator""_kind(wchar_t p) { return LitKind::WideChar; }
--constexpr LitKind operator""_kind(char16_t p) { return LitKind::Char16; }
--constexpr LitKind operator""_kind(char32_t p) { return LitKind::Char32; }
--constexpr LitKind operator""_kind(const char *p, size_t n) { return LitKind::CharStr; }
--constexpr LitKind operator""_kind(const wchar_t *p, size_t n) { return LitKind::WideStr; }
--constexpr LitKind operator""_kind(const char16_t *p, size_t n) { return LitKind::Char16Str; }
--constexpr LitKind operator""_kind(const char32_t *p, size_t n) { return LitKind::Char32Str; }
--constexpr LitKind operator""_kind(unsigned long long n) { return LitKind::Integer; }
--constexpr LitKind operator""_kind(long double n) { return LitKind::Floating; }
--constexpr LitKind operator""_kind2(const char *p) { return LitKind::Raw; }
--template<char ...Cs> constexpr LitKind operator""_kind3() { return LitKind::Template; }
-+constexpr LitKind operator"" _kind(char p) { return LitKind::Char; }
-+constexpr LitKind operator"" _kind(wchar_t p) { return LitKind::WideChar; }
-+constexpr LitKind operator"" _kind(char16_t p) { return LitKind::Char16; }
-+constexpr LitKind operator"" _kind(char32_t p) { return LitKind::Char32; }
-+constexpr LitKind operator"" _kind(const char *p, size_t n) { return LitKind::CharStr; }
-+constexpr LitKind operator"" _kind(const wchar_t *p, size_t n) { return LitKind::WideStr; }
-+constexpr LitKind operator"" _kind(const char16_t *p, size_t n) { return LitKind::Char16Str; }
-+constexpr LitKind operator"" _kind(const char32_t *p, size_t n) { return LitKind::Char32Str; }
-+constexpr LitKind operator"" _kind(unsigned long long n) { return LitKind::Integer; }
-+constexpr LitKind operator"" _kind(long double n) { return LitKind::Floating; }
-+constexpr LitKind operator"" _kind2(const char *p) { return LitKind::Raw; }
-+template<char ...Cs> constexpr LitKind operator"" _kind3() { return LitKind::Template; }
- 
- static_assert('x'_kind == LitKind::Char, "");
- static_assert(L'x'_kind == LitKind::WideChar, "");
-@@ -41,7 +41,7 @@
- constexpr const char *fractional_digits_impl(const char *p) {
-   return *p == '.' ? p + 1 : *p ? fractional_digits_impl(p + 1) : 0;
- }
--constexpr const char *operator""_fractional_digits(const char *p) {
-+constexpr const char *operator"" _fractional_digits(const char *p) {
-   return fractional_digits_impl(p) ?: p;
- }
- constexpr bool streq(const char *p, const char *q) {
-@@ -56,57 +56,57 @@
- static_assert(streq(0377_fractional_digits, "0377"), "");
- static_assert(streq(0377.5_fractional_digits, "5"), "");
- 
--int operator""_ambiguous(char); // expected-note {{candidate}}
-+int operator"" _ambiguous(char); // expected-note {{candidate}}
- namespace N {
--  void *operator""_ambiguous(char); // expected-note {{candidate}}
-+  void *operator"" _ambiguous(char); // expected-note {{candidate}}
- }
- using namespace N;
- int k = 'x'_ambiguous; // expected-error {{ambiguous}}
- 
--int operator""_deleted(unsigned long long) = delete; // expected-note {{here}}
-+int operator"" _deleted(unsigned long long) = delete; // expected-note {{here}}
- int m = 42_deleted; // expected-error {{attempt to use a deleted}}
- 
- namespace Using {
-   namespace M {
--    int operator""_using(char);
-+    int operator"" _using(char);
-   }
-   int k1 = 'x'_using; // expected-error {{no matching literal operator for call to 'operator""_using'}}
- 
--  using M::operator ""_using;
-+  using M::operator "" _using;
-   int k2 = 'x'_using;
- }
- 
- namespace AmbiguousRawTemplate {
--  int operator""_ambig1(const char *); // expected-note {{candidate}}
--  template<char...> int operator""_ambig1(); // expected-note {{candidate}}
-+  int operator"" _ambig1(const char *); // expected-note {{candidate}}
-+  template<char...> int operator"" _ambig1(); // expected-note {{candidate}}
- 
-   int k1 = 123_ambig1; // expected-error {{call to 'operator""_ambig1' is ambiguous}}
- 
-   namespace Inner {
--    template<char...> int operator""_ambig2(); // expected-note 3{{candidate}}
-+    template<char...> int operator"" _ambig2(); // expected-note 3{{candidate}}
-   }
--  int operator""_ambig2(const char *); // expected-note 3{{candidate}}
--  using Inner::operator""_ambig2;
-+  int operator"" _ambig2(const char *); // expected-note 3{{candidate}}
-+  using Inner::operator"" _ambig2;
- 
-   int k2 = 123_ambig2; // expected-error {{call to 'operator""_ambig2' is ambiguous}}
- 
-   namespace N {
--    using Inner::operator""_ambig2;
-+    using Inner::operator"" _ambig2;
- 
-     int k3 = 123_ambig2; // ok
- 
--    using AmbiguousRawTemplate::operator""_ambig2;
-+    using AmbiguousRawTemplate::operator"" _ambig2;
- 
-     int k4 = 123_ambig2; // expected-error {{ambiguous}}
- 
-     namespace M {
- 
--      template<char...> int operator""_ambig2();
-+      template<char...> int operator"" _ambig2();
- 
-       int k5 = 123_ambig2; // ok
+@@ -1061,10 +1061,10 @@
+ 
+   EVT EltVT = N->getValueType(0);
+ 
+-  // v8x16 is a special case. PTX doesn't have ld.v8.16
+-  // instruction. Instead, we split the vector into v2x16 chunks and
++  // v8f16 is a special case. PTX doesn't have ld.v8.f16
++  // instruction. Instead, we split the vector into v2f16 chunks and
+   // load them with ld.v4.b32.
+-  if (Isv2x16VT(EltVT)) {
++  if (EltVT == MVT::v2f16 || EltVT == MVT::v2bf16) {
+     assert(N->getOpcode() == NVPTXISD::LoadV4 && "Unexpected load opcode.");
+     EltVT = MVT::i32;
+     FromType = NVPTX::PTXLdStInstCode::Untyped;
+@@ -1260,13 +1260,12 @@
+   if (EltVT.isVector()) {
+     NumElts = EltVT.getVectorNumElements();
+     EltVT = EltVT.getVectorElementType();
+-    // vectors of 16bits type are loaded/stored as multiples of v2x16 elements.
++    // vectors of f16 are loaded/stored as multiples of v2f16 elements.
+     if ((EltVT == MVT::f16 && N->getValueType(0) == MVT::v2f16) ||
+-        (EltVT == MVT::bf16 && N->getValueType(0) == MVT::v2bf16) ||
+-        (EltVT == MVT::i16 && N->getValueType(0) == MVT::v2i16)) {
+-      assert(NumElts % 2 == 0 && "Vector must have even number of elements");
+-      EltVT = N->getValueType(0);
+-      NumElts /= 2;
++        (EltVT == MVT::bf16 && N->getValueType(0) == MVT::v2bf16)) {
++          assert(NumElts % 2 == 0 && "Vector must have even number of elements");
++          EltVT = N->getValueType(0);
++          NumElts /= 2;
      }
- 
--    int operator""_ambig2(unsigned long long);
-+    int operator"" _ambig2(unsigned long long);
- 
-     int k6 = 123_ambig2; // ok
-     int k7 = 123._ambig2; // expected-error {{ambiguous}}
-@@ -121,7 +121,7 @@
-  return hash<Cs...>(mash(a ^ mash(C)));
- }
- template<typename T, T v> struct constant { constexpr static T value = v; };
--template<char...Cs> constexpr unsigned operator""_hash() {
-+template<char...Cs> constexpr unsigned operator"" _hash() {
-   return constant<unsigned, hash<Cs...>(0)>::value;
- }
- static_assert(0x1234_hash == 0x103eff5e, "");
-@@ -129,7 +129,7 @@
- 
- // Functions and literal suffixes go in separate namespaces.
- namespace Namespace {
--  template<char...> int operator""_x();
-+  template<char...> int operator"" _x();
-   int k = _x(); // expected-error {{undeclared identifier '_x'}}
- 
-   int _y(unsigned long long);
-@@ -138,7 +138,7 @@
- 
- namespace PR14950 {
-   template<...> // expected-error {{expected template parameter}}
--  int operator""_b(); // expected-error {{no function template matches function template specialization}}
-+  int operator"" _b(); // expected-error {{no function template matches function template specialization}}
-   int main() { return 0_b; } // expected-error {{no matching literal operator for call to 'operator""_b'}}
- }
- 
-diff -ruN --strip-trailing-cr a/clang/test/SemaCXX/cxx1y-user-defined-literals.cpp b/clang/test/SemaCXX/cxx1y-user-defined-literals.cpp
---- a/clang/test/SemaCXX/cxx1y-user-defined-literals.cpp
-+++ b/clang/test/SemaCXX/cxx1y-user-defined-literals.cpp
-@@ -32,7 +32,7 @@
- using namespace std;
- duration a = 1ns, b = 1us, c = 1ms, d = 1s, e = 1min, f = 1h;
- string s = "foo"s;
--char error = 'x's; // expected-error {{no matching literal operator for call to 'operator""s' with argument of type 'char'}}
-+char error = 'x's; // expected-error {{invalid suffix}} expected-error {{expected ';'}}
- 
- int _1y = 1y; // expected-error {{invalid suffix}}
- int _1b = 1b; // expected-error {{invalid digit}}
-diff -ruN --strip-trailing-cr a/clang/test/SemaCXX/cxx1z-user-defined-literals.cpp b/clang/test/SemaCXX/cxx1z-user-defined-literals.cpp
---- a/clang/test/SemaCXX/cxx1z-user-defined-literals.cpp
-+++ b/clang/test/SemaCXX/cxx1z-user-defined-literals.cpp
-@@ -16,6 +16,6 @@
- using namespace std;
- string_view s = "foo"sv;
- const char* p = "bar"sv; // expected-error {{no viable conversion}}
--char error = 'x'sv; // expected-error {{no matching literal operator for call to 'operator""sv' with argument of type 'char'}}
-+char error = 'x'sv; // expected-error {{invalid suffix}} expected-error {{expected ';'}}
- 
- #endif
-diff -ruN --strip-trailing-cr a/clang/test/SemaCXX/cxx2a-consteval.cpp b/clang/test/SemaCXX/cxx2a-consteval.cpp
---- a/clang/test/SemaCXX/cxx2a-consteval.cpp
-+++ b/clang/test/SemaCXX/cxx2a-consteval.cpp
-@@ -158,17 +158,17 @@
- 
- namespace user_defined_literal {
- 
--consteval int operator""_test(unsigned long long i) {
-+consteval int operator"" _test(unsigned long long i) {
- // expected-note@-1+ {{declared here}}
-   return 0;
- }
- 
- int i = 0_test;
- 
--auto ptr = &operator""_test;
-+auto ptr = &operator"" _test;
- // expected-error@-1 {{take address}}
- 
--consteval auto operator""_test1(unsigned long long i) {
-+consteval auto operator"" _test1(unsigned long long i) {
-   return &f_eval;
- }
- 
-diff -ruN --strip-trailing-cr a/clang/test/SemaCXX/cxx98-compat.cpp b/clang/test/SemaCXX/cxx98-compat.cpp
---- a/clang/test/SemaCXX/cxx98-compat.cpp
-+++ b/clang/test/SemaCXX/cxx98-compat.cpp
-@@ -84,7 +84,7 @@
    }
+ 
+@@ -1679,8 +1678,9 @@
+   MVT ScalarVT = SimpleVT.getScalarType();
+   unsigned toTypeWidth = ScalarVT.getSizeInBits();
+   if (SimpleVT.isVector()) {
+-    assert(Isv2x16VT(StoreVT) && "Unexpected vector type");
+-    // v2x16 is stored using st.b32
++    assert((StoreVT == MVT::v2f16 || StoreVT == MVT::v2bf16) &&
++           "Unexpected vector type");
++    // v2f16 is stored using st.b32
+     toTypeWidth = 32;
+   }
+ 
+@@ -1844,10 +1844,10 @@
+     return false;
+   }
+ 
+-  // v8x16 is a special case. PTX doesn't have st.v8.x16
+-  // instruction. Instead, we split the vector into v2x16 chunks and
++  // v8f16 is a special case. PTX doesn't have st.v8.f16
++  // instruction. Instead, we split the vector into v2f16 chunks and
+   // store them with st.v4.b32.
+-  if (Isv2x16VT(EltVT)) {
++  if (EltVT == MVT::v2f16 || EltVT == MVT::v2bf16) {
+     assert(N->getOpcode() == NVPTXISD::StoreV4 && "Unexpected load opcode.");
+     EltVT = MVT::i32;
+     ToType = NVPTX::PTXLdStInstCode::Untyped;
+diff -ruN --strip-trailing-cr a/llvm/lib/Target/NVPTX/NVPTXISelLowering.cpp b/llvm/lib/Target/NVPTX/NVPTXISelLowering.cpp
+--- a/llvm/lib/Target/NVPTX/NVPTXISelLowering.cpp
++++ b/llvm/lib/Target/NVPTX/NVPTXISelLowering.cpp
+@@ -133,7 +133,6 @@
+   case MVT::v4i8:
+   case MVT::v2i16:
+   case MVT::v4i16:
+-  case MVT::v8i16: // <4 x i16x2>
+   case MVT::v2i32:
+   case MVT::v4i32:
+   case MVT::v2i64:
+@@ -150,9 +149,12 @@
+   }
+ }
+ 
+-static bool Is16bitsType(MVT VT) {
+-  return (VT.SimpleTy == MVT::f16 || VT.SimpleTy == MVT::bf16 ||
+-          VT.SimpleTy == MVT::i16);
++static bool Isv2f16Orv2bf16Type(EVT VT) {
++  return (VT == MVT::v2f16 || VT == MVT::v2bf16);
++}
++
++static bool Isf16Orbf16Type(MVT VT) {
++  return (VT.SimpleTy == MVT::f16 || VT.SimpleTy == MVT::bf16);
+ }
+ 
+ /// ComputePTXValueVTs - For the given Type \p Ty, returns the set of primitive
+@@ -205,20 +207,8 @@
+       // Vectors with an even number of f16 elements will be passed to
+       // us as an array of v2f16/v2bf16 elements. We must match this so we
+       // stay in sync with Ins/Outs.
+-      if ((Is16bitsType(EltVT.getSimpleVT())) && NumElts % 2 == 0) {
+-        switch (EltVT.getSimpleVT().SimpleTy) {
+-        case MVT::f16:
+-          EltVT = MVT::v2f16;
+-          break;
+-        case MVT::bf16:
+-          EltVT = MVT::v2bf16;
+-          break;
+-        case MVT::i16:
+-          EltVT = MVT::v2i16;
+-          break;
+-        default:
+-          llvm_unreachable("Unexpected type");
+-        }
++      if ((Isf16Orbf16Type(EltVT.getSimpleVT())) && NumElts % 2 == 0) {
++        EltVT = EltVT == MVT::f16 ? MVT::v2f16 : MVT::v2bf16;
+         NumElts /= 2;
+       }
+       for (unsigned j = 0; j != NumElts; ++j) {
+@@ -437,26 +427,8 @@
+         Op, VT, IsOpSupported ? Action : NoBF16Action);
+   };
+ 
+-  auto setI16x2OperationAction = [&](unsigned Op, MVT VT, LegalizeAction Action,
+-                                     LegalizeAction NoI16x2Action) {
+-    bool IsOpSupported = false;
+-    // instructions are available on sm_90 only
+-    switch (Op) {
+-    case ISD::ADD:
+-    case ISD::SMAX:
+-    case ISD::SMIN:
+-    case ISD::UMIN:
+-    case ISD::UMAX:
+-    case ISD::SUB:
+-      IsOpSupported = STI.getSmVersion() >= 90 && STI.getPTXVersion() >= 80;
+-      break;
+-    }
+-    setOperationAction(Op, VT, IsOpSupported ? Action : NoI16x2Action);
+-  };
+-
+   addRegisterClass(MVT::i1, &NVPTX::Int1RegsRegClass);
+   addRegisterClass(MVT::i16, &NVPTX::Int16RegsRegClass);
+-  addRegisterClass(MVT::v2i16, &NVPTX::Int32RegsRegClass);
+   addRegisterClass(MVT::i32, &NVPTX::Int32RegsRegClass);
+   addRegisterClass(MVT::i64, &NVPTX::Int64RegsRegClass);
+   addRegisterClass(MVT::f32, &NVPTX::Float32RegsRegClass);
+@@ -487,17 +459,9 @@
+ 
+   setBF16OperationAction(ISD::SETCC, MVT::bf16, Legal, Promote);
+   setBF16OperationAction(ISD::SETCC, MVT::v2bf16, Legal, Expand);
+-
+-  // Conversion to/from i16/i16x2 is always legal.
+-  setOperationAction(ISD::BUILD_VECTOR, MVT::v2i16, Custom);
+-  setOperationAction(ISD::EXTRACT_VECTOR_ELT, MVT::v2i16, Custom);
+-  setOperationAction(ISD::INSERT_VECTOR_ELT, MVT::v2i16, Expand);
+-  setOperationAction(ISD::VECTOR_SHUFFLE, MVT::v2i16, Expand);
+-
+   // Operations not directly supported by NVPTX.
+-  for (MVT VT :
+-       {MVT::bf16, MVT::f16, MVT::v2bf16, MVT::v2f16, MVT::f32, MVT::f64,
+-        MVT::i1, MVT::i8, MVT::i16, MVT::v2i16, MVT::i32, MVT::i64}) {
++  for (MVT VT : {MVT::bf16, MVT::f16, MVT::v2bf16, MVT::v2f16, MVT::f32,
++                 MVT::f64, MVT::i1, MVT::i8, MVT::i16, MVT::i32, MVT::i64}) {
+     setOperationAction(ISD::SELECT_CC, VT, Expand);
+     setOperationAction(ISD::BR_CC, VT, Expand);
+   }
+@@ -509,7 +473,6 @@
+   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i16, Legal);
+   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i8 , Legal);
+   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i1, Expand);
+-  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::v2i16, Expand);
+ 
+   setOperationAction(ISD::SHL_PARTS, MVT::i32  , Custom);
+   setOperationAction(ISD::SRA_PARTS, MVT::i32  , Custom);
+@@ -530,13 +493,10 @@
+   setOperationAction(ISD::ROTR, MVT::i32, Legal);
+ 
+   setOperationAction(ISD::ROTL, MVT::i16, Expand);
+-  setOperationAction(ISD::ROTL, MVT::v2i16, Expand);
+   setOperationAction(ISD::ROTR, MVT::i16, Expand);
+-  setOperationAction(ISD::ROTR, MVT::v2i16, Expand);
+   setOperationAction(ISD::ROTL, MVT::i8, Expand);
+   setOperationAction(ISD::ROTR, MVT::i8, Expand);
+   setOperationAction(ISD::BSWAP, MVT::i16, Expand);
+-  setOperationAction(ISD::BSWAP, MVT::v2i16, Expand);
+   setOperationAction(ISD::BSWAP, MVT::i32, Expand);
+   setOperationAction(ISD::BSWAP, MVT::i64, Expand);
+ 
+@@ -629,21 +589,6 @@
+     setOperationAction(ISD::CTLZ, Ty, Legal);
+   }
+ 
+-  setI16x2OperationAction(ISD::ABS, MVT::v2i16, Legal, Custom);
+-  setI16x2OperationAction(ISD::SMIN, MVT::v2i16, Legal, Custom);
+-  setI16x2OperationAction(ISD::SMAX, MVT::v2i16, Legal, Custom);
+-  setI16x2OperationAction(ISD::UMIN, MVT::v2i16, Legal, Custom);
+-  setI16x2OperationAction(ISD::UMAX, MVT::v2i16, Legal, Custom);
+-  setI16x2OperationAction(ISD::CTPOP, MVT::v2i16, Legal, Expand);
+-  setI16x2OperationAction(ISD::CTLZ, MVT::v2i16, Legal, Expand);
+-
+-  setI16x2OperationAction(ISD::ADD, MVT::v2i16, Legal, Custom);
+-  setI16x2OperationAction(ISD::SUB, MVT::v2i16, Legal, Custom);
+-  setI16x2OperationAction(ISD::MUL, MVT::v2i16, Legal, Custom);
+-  setI16x2OperationAction(ISD::SHL, MVT::v2i16, Legal, Custom);
+-  setI16x2OperationAction(ISD::SREM, MVT::v2i16, Legal, Custom);
+-  setI16x2OperationAction(ISD::UREM, MVT::v2i16, Legal, Custom);
+-
+   setOperationAction(ISD::ADDC, MVT::i32, Legal);
+   setOperationAction(ISD::ADDE, MVT::i32, Legal);
+   setOperationAction(ISD::SUBC, MVT::i32, Legal);
+@@ -656,7 +601,6 @@
+   }
+ 
+   setOperationAction(ISD::CTTZ, MVT::i16, Expand);
+-  setOperationAction(ISD::CTTZ, MVT::v2i16, Expand);
+   setOperationAction(ISD::CTTZ, MVT::i32, Expand);
+   setOperationAction(ISD::CTTZ, MVT::i64, Expand);
+ 
+@@ -1379,7 +1323,7 @@
+   if (!VT.isScalableVector() && VT.getVectorNumElements() != 1 &&
+       VT.getScalarType() == MVT::i1)
+     return TypeSplitVector;
+-  if (Isv2x16VT(VT))
++  if (Isv2f16Orv2bf16Type(VT))
+     return TypeLegal;
+   return TargetLoweringBase::getPreferredVectorAction(VT);
+ }
+@@ -2159,31 +2103,15 @@
+ // generates good SASS in both cases.
+ SDValue NVPTXTargetLowering::LowerBUILD_VECTOR(SDValue Op,
+                                                SelectionDAG &DAG) const {
+-  EVT VT = Op->getValueType(0);
+-  if (!(Isv2x16VT(VT)))
++  if (!(Isv2f16Orv2bf16Type(Op->getValueType(0)) &&
++        isa<ConstantFPSDNode>(Op->getOperand(0)) &&
++        isa<ConstantFPSDNode>(Op->getOperand(1))))
+     return Op;
+-  APInt E0;
+-  APInt E1;
+-  if (VT == MVT::v2f16 || VT == MVT::v2bf16) {
+-    if (!(isa<ConstantFPSDNode>(Op->getOperand(0)) &&
+-          isa<ConstantFPSDNode>(Op->getOperand(1))))
+-      return Op;
+-
+-    E0 = cast<ConstantFPSDNode>(Op->getOperand(0))
+-             ->getValueAPF()
+-             .bitcastToAPInt();
+-    E1 = cast<ConstantFPSDNode>(Op->getOperand(1))
+-             ->getValueAPF()
+-             .bitcastToAPInt();
+-  } else {
+-    assert(VT == MVT::v2i16);
+-    if (!(isa<ConstantSDNode>(Op->getOperand(0)) &&
+-          isa<ConstantSDNode>(Op->getOperand(1))))
+-      return Op;
+ 
+-    E0 = cast<ConstantSDNode>(Op->getOperand(0))->getAPIntValue();
+-    E1 = cast<ConstantSDNode>(Op->getOperand(1))->getAPIntValue();
+-  }
++  APInt E0 =
++      cast<ConstantFPSDNode>(Op->getOperand(0))->getValueAPF().bitcastToAPInt();
++  APInt E1 =
++      cast<ConstantFPSDNode>(Op->getOperand(1))->getValueAPF().bitcastToAPInt();
+   SDValue Const =
+       DAG.getConstant(E1.zext(32).shl(16) | E0.zext(32), SDLoc(Op), MVT::i32);
+   return DAG.getNode(ISD::BITCAST, SDLoc(Op), Op->getValueType(0), Const);
+@@ -2199,7 +2127,7 @@
+   // Extract individual elements and select one of them.
+   SDValue Vector = Op->getOperand(0);
+   EVT VectorVT = Vector.getValueType();
+-  assert(Isv2x16VT(VectorVT) && "Unexpected vector type.");
++  assert(VectorVT == MVT::v2f16 && "Unexpected vector type.");
+   EVT EltVT = VectorVT.getVectorElementType();
+ 
+   SDLoc dl(Op.getNode());
+@@ -2424,25 +2352,7 @@
+   return DAG.getNode(ISD::SELECT, SL, VT, IsLarge, A, RoundedA);
+ }
+ 
+-static SDValue LowerVectorArith(SDValue Op, SelectionDAG &DAG) {
+-  SDLoc DL(Op);
+-  if (Op.getValueType() != MVT::v2i16)
+-    return Op;
+-  EVT EltVT = Op.getValueType().getVectorElementType();
+-  SmallVector<SDValue> VecElements;
+-  for (int I = 0, E = Op.getValueType().getVectorNumElements(); I < E; I++) {
+-    SmallVector<SDValue> ScalarArgs;
+-    llvm::transform(Op->ops(), std::back_inserter(ScalarArgs),
+-                    [&](const SDUse &O) {
+-                      return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, EltVT,
+-                                         O.get(), DAG.getIntPtrConstant(I, DL));
+-                    });
+-    VecElements.push_back(DAG.getNode(Op.getOpcode(), DL, EltVT, ScalarArgs));
+-  }
+-  SDValue V =
+-      DAG.getNode(ISD::BUILD_VECTOR, DL, Op.getValueType(), VecElements);
+-  return V;
+-}
++
+ 
+ SDValue
+ NVPTXTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
+@@ -2480,18 +2390,6 @@
+     return LowerVAARG(Op, DAG);
+   case ISD::VASTART:
+     return LowerVASTART(Op, DAG);
+-  case ISD::ABS:
+-  case ISD::SMIN:
+-  case ISD::SMAX:
+-  case ISD::UMIN:
+-  case ISD::UMAX:
+-  case ISD::ADD:
+-  case ISD::SUB:
+-  case ISD::MUL:
+-  case ISD::SHL:
+-  case ISD::SREM:
+-  case ISD::UREM:
+-    return LowerVectorArith(Op, DAG);
+   default:
+     llvm_unreachable("Custom lowering not defined for operation");
+   }
+@@ -2575,9 +2473,9 @@
+   if (Op.getValueType() == MVT::i1)
+     return LowerLOADi1(Op, DAG);
+ 
+-  // v2f16/v2bf16/v2i16 are legal, so we can't rely on legalizer to handle
+-  // unaligned loads and have to handle it here.
+-  if (Isv2x16VT(Op.getValueType())) {
++  // v2f16 is legal, so we can't rely on legalizer to handle unaligned
++  // loads and have to handle it here.
++  if (Isv2f16Orv2bf16Type(Op.getValueType())) {
+     LoadSDNode *Load = cast<LoadSDNode>(Op);
+     EVT MemVT = Load->getMemoryVT();
+     if (!allowsMemoryAccessForAlignment(*DAG.getContext(), DAG.getDataLayout(),
+@@ -2622,13 +2520,13 @@
+ 
+   // v2f16 is legal, so we can't rely on legalizer to handle unaligned
+   // stores and have to handle it here.
+-  if (Isv2x16VT(VT) &&
++  if (Isv2f16Orv2bf16Type(VT) &&
+       !allowsMemoryAccessForAlignment(*DAG.getContext(), DAG.getDataLayout(),
+                                       VT, *Store->getMemOperand()))
+     return expandUnalignedStore(Store, DAG);
+ 
+-  // v2f16, v2bf16 and v2i16 don't need special handling.
+-  if (Isv2x16VT(VT))
++  // v2f16 and v2bf16 don't need special handling.
++  if (VT == MVT::v2f16 || VT == MVT::v2bf16)
+     return SDValue();
+ 
+   if (VT.isVector())
+@@ -2669,7 +2567,6 @@
+     case MVT::v4f32:
+     case MVT::v8f16: // <4 x f16x2>
+     case MVT::v8bf16: // <4 x bf16x2>
+-    case MVT::v8i16:  // <4 x i16x2>
+       // This is a "native" vector type
+       break;
+     }
+@@ -2714,7 +2611,8 @@
+       // v8f16 is a special case. PTX doesn't have st.v8.f16
+       // instruction. Instead, we split the vector into v2f16 chunks and
+       // store them with st.v4.b32.
+-      assert(Is16bitsType(EltVT.getSimpleVT()) && "Wrong type for the vector.");
++      assert(Isf16Orbf16Type(EltVT.getSimpleVT()) &&
++             "Wrong type for the vector.");
+       Opcode = NVPTXISD::StoreV4;
+       StoreF16x2 = true;
+       break;
+@@ -2900,7 +2798,7 @@
+           EVT LoadVT = EltVT;
+           if (EltVT == MVT::i1)
+             LoadVT = MVT::i8;
+-          else if (Isv2x16VT(EltVT))
++          else if (Isv2f16Orv2bf16Type(EltVT))
+             // getLoad needs a vector type, but it can't handle
+             // vectors which contain v2f16 or v2bf16 elements. So we must load
+             // using i32 here and then bitcast back.
+@@ -2926,7 +2824,7 @@
+             if (EltVT == MVT::i1)
+               Elt = DAG.getNode(ISD::TRUNCATE, dl, MVT::i1, Elt);
+             // v2f16 was loaded as an i32. Now we must bitcast it back.
+-            else if (Isv2x16VT(EltVT))
++            else if (Isv2f16Orv2bf16Type(EltVT))
+               Elt = DAG.getNode(ISD::BITCAST, dl, EltVT, Elt);
+ 
+             // If a promoted integer type is used, truncate down to the original
+@@ -5304,9 +5202,7 @@
+   case MVT::v4i32:
+   case MVT::v4f16:
+   case MVT::v4f32:
+-  case MVT::v8f16:  // <4 x f16x2>
+-  case MVT::v8bf16: // <4 x bf16x2>
+-  case MVT::v8i16:  // <4 x i16x2>
++  case MVT::v8f16: // <4 x f16x2>
+     // This is a "native" vector type
+     break;
+   }
+@@ -5340,7 +5236,7 @@
+ 
+   unsigned Opcode = 0;
+   SDVTList LdResVTs;
+-  bool Load16x2 = false;
++  bool LoadF16x2 = false;
+ 
+   switch (NumElts) {
+   default:
+@@ -5359,23 +5255,11 @@
+     // v8f16 is a special case. PTX doesn't have ld.v8.f16
+     // instruction. Instead, we split the vector into v2f16 chunks and
+     // load them with ld.v4.b32.
+-    assert(Is16bitsType(EltVT.getSimpleVT()) && "Unsupported v8 vector type.");
+-    Load16x2 = true;
++    assert(Isf16Orbf16Type(EltVT.getSimpleVT()) &&
++           "Unsupported v8 vector type.");
++    LoadF16x2 = true;
+     Opcode = NVPTXISD::LoadV4;
+-    EVT VVT;
+-    switch (EltVT.getSimpleVT().SimpleTy) {
+-    case MVT::f16:
+-      VVT = MVT::v2f16;
+-      break;
+-    case MVT::bf16:
+-      VVT = MVT::v2bf16;
+-      break;
+-    case MVT::i16:
+-      VVT = MVT::v2i16;
+-      break;
+-    default:
+-      llvm_unreachable("Unsupported v8 vector type.");
+-    }
++    EVT VVT = (EltVT == MVT::f16) ? MVT::v2f16 : MVT::v2bf16;
+     EVT ListVTs[] = {VVT, VVT, VVT, VVT, MVT::Other};
+     LdResVTs = DAG.getVTList(ListVTs);
+     break;
+@@ -5394,7 +5278,7 @@
+                                           LD->getMemOperand());
+ 
+   SmallVector<SDValue, 8> ScalarRes;
+-  if (Load16x2) {
++  if (LoadF16x2) {
+     // Split v2f16 subvectors back into individual elements.
+     NumElts /= 2;
+     for (unsigned i = 0; i < NumElts; ++i) {
+diff -ruN --strip-trailing-cr a/llvm/lib/Target/NVPTX/NVPTXISelLowering.h b/llvm/lib/Target/NVPTX/NVPTXISelLowering.h
+--- a/llvm/lib/Target/NVPTX/NVPTXISelLowering.h
++++ b/llvm/lib/Target/NVPTX/NVPTXISelLowering.h
+@@ -617,7 +617,6 @@
+   Align getArgumentAlignment(SDValue Callee, const CallBase *CB, Type *Ty,
+                              unsigned Idx, const DataLayout &DL) const;
  };
+-
+ } // namespace llvm
  
--int operator""_hello(const char *); // expected-warning {{literal operators are incompatible with C++98}}
-+int operator"" _hello(const char *); // expected-warning {{literal operators are incompatible with C++98}}
- 
- enum EnumFixed : int { // expected-warning {{enumeration types with a fixed underlying type are incompatible with C++98}}
- };
-diff -ruN --strip-trailing-cr a/clang/test/SemaCXX/literal-operators.cpp b/clang/test/SemaCXX/literal-operators.cpp
---- a/clang/test/SemaCXX/literal-operators.cpp
-+++ b/clang/test/SemaCXX/literal-operators.cpp
-@@ -3,46 +3,46 @@
- #include <stddef.h>
- 
- struct tag {
--  void operator ""_tag_bad (const char *); // expected-error {{literal operator 'operator""_tag_bad' must be in a namespace or global scope}}
--  friend void operator ""_tag_good (const char *);
-+  void operator "" _tag_bad (const char *); // expected-error {{literal operator 'operator""_tag_bad' must be in a namespace or global scope}}
-+  friend void operator "" _tag_good (const char *);
- };
- 
--namespace ns { void operator ""_ns_good (const char *); }
-+namespace ns { void operator "" _ns_good (const char *); }
- 
- // Check extern "C++" declarations
--extern "C++" void operator ""_extern_good (const char *);
--extern "C++" { void operator ""_extern_good (const char *); }
-+extern "C++" void operator "" _extern_good (const char *);
-+extern "C++" { void operator "" _extern_good (const char *); }
- 
--void fn () { void operator ""_fn_good (const char *); }
-+void fn () { void operator "" _fn_good (const char *); }
- 
- // One-param declarations (const char * was already checked)
--void operator ""_good (char);
--void operator ""_good (wchar_t);
--void operator ""_good (char16_t);
--void operator ""_good (char32_t);
--void operator ""_good (unsigned long long);
--void operator ""_good (long double);
-+void operator "" _good (char);
-+void operator "" _good (wchar_t);
-+void operator "" _good (char16_t);
-+void operator "" _good (char32_t);
-+void operator "" _good (unsigned long long);
-+void operator "" _good (long double);
- 
- // Two-param declarations
--void operator ""_good (const char *, size_t);
--void operator ""_good (const wchar_t *, size_t);
--void operator ""_good (const char16_t *, size_t);
--void operator ""_good (const char32_t *, size_t);
-+void operator "" _good (const char *, size_t);
-+void operator "" _good (const wchar_t *, size_t);
-+void operator "" _good (const char16_t *, size_t);
-+void operator "" _good (const char32_t *, size_t);
- 
- // Check typedef and array equivalences
--void operator ""_good (const char[]);
-+void operator "" _good (const char[]);
- typedef const char c;
--void operator ""_good (c*);
-+void operator "" _good (c*);
- 
- // Check extra cv-qualifiers
--void operator ""_cv_good (volatile const char *, const size_t); // expected-error {{invalid literal operator parameter type 'const volatile char *', did you mean 'const char *'?}}
-+void operator "" _cv_good (volatile const char *, const size_t); // expected-error {{invalid literal operator parameter type 'const volatile char *', did you mean 'const char *'?}}
- 
- // Template declaration
--template <char...> void operator ""_good ();
-+template <char...> void operator "" _good ();
- 
--template <typename...> void operator ""_invalid(); // expected-error {{template parameter list for literal operator must be either 'char...' or 'typename T, T...'}}
--template <wchar_t...> void operator ""_invalid();  // expected-error {{template parameter list for literal operator must be either 'char...' or 'typename T, T...'}}
--template <unsigned long long...> void operator ""_invalid();  // expected-error {{template parameter list for literal operator must be either 'char...' or 'typename T, T...'}}
-+template <typename...> void operator "" _invalid(); // expected-error {{template parameter list for literal operator must be either 'char...' or 'typename T, T...'}}
-+template <wchar_t...> void operator "" _invalid();  // expected-error {{template parameter list for literal operator must be either 'char...' or 'typename T, T...'}}
-+template <unsigned long long...> void operator "" _invalid();  // expected-error {{template parameter list for literal operator must be either 'char...' or 'typename T, T...'}}
- 
- _Complex float operator""if(long double); // expected-warning {{reserved}}
- _Complex float test_if_1() { return 2.0f + 1.5if; };
-diff -ruN --strip-trailing-cr a/clang/test/SemaCXX/no-warn-user-defined-literals-in-system-headers.cpp b/clang/test/SemaCXX/no-warn-user-defined-literals-in-system-headers.cpp
---- a/clang/test/SemaCXX/no-warn-user-defined-literals-in-system-headers.cpp
-+++ b/clang/test/SemaCXX/no-warn-user-defined-literals-in-system-headers.cpp
-@@ -2,4 +2,4 @@
- 
- #include <no-warn-user-defined-literals-in-system-headers.h>
- 
--void operator ""bar(long double); // expected-warning{{user-defined literal suffixes not starting with '_' are reserved}}
-+void operator "" bar(long double); // expected-warning{{user-defined literal suffixes not starting with '_' are reserved}}
-diff -ruN --strip-trailing-cr a/clang/test/SemaCXX/reserved-identifier.cpp b/clang/test/SemaCXX/reserved-identifier.cpp
---- a/clang/test/SemaCXX/reserved-identifier.cpp
-+++ b/clang/test/SemaCXX/reserved-identifier.cpp
-@@ -89,6 +89,7 @@
- long double sacrebleu = operator"" _SacreBleu(1.2); // expected-warning {{identifier '_SacreBleu' is reserved because it starts with '_' followed by a capital letter}}
- long double sangbleu = operator""_SacreBleu(1.2);   // no-warning
- 
-+void operator"" _lowercase(unsigned long long); // no-warning
- void operator""_lowercase(unsigned long long); // no-warning
- 
- struct _BarbeRouge { // expected-warning {{identifier '_BarbeRouge' is reserved because it starts with '_' followed by a capital letter}}
-diff -ruN --strip-trailing-cr a/clang/test/SemaCXX/warn-xor-as-pow.cpp b/clang/test/SemaCXX/warn-xor-as-pow.cpp
---- a/clang/test/SemaCXX/warn-xor-as-pow.cpp
-+++ b/clang/test/SemaCXX/warn-xor-as-pow.cpp
-@@ -19,10 +19,10 @@
- #define flexor 7
- 
- #ifdef __cplusplus
--constexpr long long operator""_xor(unsigned long long v) { return v; }
-+constexpr long long operator"" _xor(unsigned long long v) { return v; }
- 
--constexpr long long operator""_0b(unsigned long long v) { return v; }
--constexpr long long operator""_0X(unsigned long long v) { return v; }
-+constexpr long long operator"" _0b(unsigned long long v) { return v; }
-+constexpr long long operator"" _0X(unsigned long long v) { return v; }
- #else
- #define xor ^ // iso646.h
  #endif
-diff -ruN --strip-trailing-cr a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
---- a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
-+++ b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
-@@ -1126,6 +1126,7 @@
-     hdrs = [
-         "include/llvm-c/BitWriter.h",
-         "include/llvm/Bitcode/BitcodeCommon.h",
-+        "include/llvm/Bitcode/BitcodeConvenience.h",
-         "include/llvm/Bitcode/BitcodeWriter.h",
-         "include/llvm/Bitcode/BitcodeWriterPass.h",
-         "include/llvm/Bitcode/LLVMBitCodes.h",
+diff -ruN --strip-trailing-cr a/llvm/lib/Target/NVPTX/NVPTXRegisterInfo.td b/llvm/lib/Target/NVPTX/NVPTXRegisterInfo.td
+--- a/llvm/lib/Target/NVPTX/NVPTXRegisterInfo.td
++++ b/llvm/lib/Target/NVPTX/NVPTXRegisterInfo.td
+@@ -58,7 +58,7 @@
+ //===----------------------------------------------------------------------===//
+ def Int1Regs : NVPTXRegClass<[i1], 8, (add (sequence "P%u", 0, 4))>;
+ def Int16Regs : NVPTXRegClass<[i16, f16, bf16], 16, (add (sequence "RS%u", 0, 4))>;
+-def Int32Regs : NVPTXRegClass<[i32, v2f16, v2bf16, v2i16], 32,
++def Int32Regs : NVPTXRegClass<[i32, v2f16, v2bf16], 32,
+                               (add (sequence "R%u", 0, 4),
+                               VRFrame32, VRFrameLocal32)>;
+ def Int64Regs : NVPTXRegClass<[i64], 64, (add (sequence "RL%u", 0, 4), VRFrame64, VRFrameLocal64)>;
+diff -ruN --strip-trailing-cr a/llvm/lib/Target/NVPTX/NVPTXUtilities.cpp b/llvm/lib/Target/NVPTX/NVPTXUtilities.cpp
+--- a/llvm/lib/Target/NVPTX/NVPTXUtilities.cpp
++++ b/llvm/lib/Target/NVPTX/NVPTXUtilities.cpp
+@@ -348,8 +348,4 @@
+          !isKernelFunction(*F);
+ }
+ 
+-bool Isv2x16VT(EVT VT) {
+-  return (VT == MVT::v2f16 || VT == MVT::v2bf16 || VT == MVT::v2i16);
+-}
+-
+ } // namespace llvm
+diff -ruN --strip-trailing-cr a/llvm/lib/Target/NVPTX/NVPTXUtilities.h b/llvm/lib/Target/NVPTX/NVPTXUtilities.h
+--- a/llvm/lib/Target/NVPTX/NVPTXUtilities.h
++++ b/llvm/lib/Target/NVPTX/NVPTXUtilities.h
+@@ -13,7 +13,6 @@
+ #ifndef LLVM_LIB_TARGET_NVPTX_NVPTXUTILITIES_H
+ #define LLVM_LIB_TARGET_NVPTX_NVPTXUTILITIES_H
+ 
+-#include "llvm/CodeGen/ValueTypes.h"
+ #include "llvm/IR/Function.h"
+ #include "llvm/IR/GlobalVariable.h"
+ #include "llvm/IR/IntrinsicInst.h"
+@@ -75,8 +74,6 @@
+ }
+ 
+ bool shouldEmitPTXNoReturn(const Value *V, const TargetMachine &TM);
+-
+-bool Isv2x16VT(EVT VT);
+ }
+ 
+ #endif
+diff -ruN --strip-trailing-cr a/llvm/test/CodeGen/NVPTX/dag-cse.ll b/llvm/test/CodeGen/NVPTX/dag-cse.ll
+--- a/llvm/test/CodeGen/NVPTX/dag-cse.ll
++++ b/llvm/test/CodeGen/NVPTX/dag-cse.ll
+@@ -12,8 +12,8 @@
+ ; CHECK: ld.global.v2.u8  {%[[B1:rs[0-9]+]], %[[B2:rs[0-9]+]]}, [a];
+ ; CHECK: st.global.v2.u8  [b], {%[[B1]], %[[B2]]};
+ ;
+-; CHECK: ld.global.u32 %[[C:r[0-9]+]], [a];
+-; CHECK: st.global.u32 [c], %[[C]];
++; CHECK: ld.global.v2.u16 {%[[C1:rs[0-9]+]], %[[C2:rs[0-9]+]]}, [a];
++; CHECK: st.global.v2.u16 [c], {%[[C1]], %[[C2]]};
+ 
+ define void @test1() #0 {
+   %1 = load <2 x i8>, ptr addrspace(1) @a, align 8
+diff -ruN --strip-trailing-cr a/llvm/test/CodeGen/NVPTX/f16x2-instructions.ll b/llvm/test/CodeGen/NVPTX/f16x2-instructions.ll
+--- a/llvm/test/CodeGen/NVPTX/f16x2-instructions.ll
++++ b/llvm/test/CodeGen/NVPTX/f16x2-instructions.ll
+@@ -993,7 +993,9 @@
+ 
+ ; CHECK-LABEL: test_bitcast_2xhalf_to_2xi16(
+ ; CHECK:      ld.param.u32    [[A:%r[0-9]+]], [test_bitcast_2xhalf_to_2xi16_param_0];
+-; CHECK:      st.param.b32 [func_retval0+0], [[A]]
++; CHECK-DAG:  cvt.u16.u32     [[R0:%rs[0-9]+]], [[A]]
++; CHECK-DAG:  mov.b32         {tmp, [[R1:%rs[0-9]+]]}, [[A]];
++; CHECK:      st.param.v2.b16 [func_retval0+0], {[[R0]], [[R1]]}
+ ; CHECK:      ret;
+ define <2 x i16> @test_bitcast_2xhalf_to_2xi16(<2 x half> %a) #0 {
+   %r = bitcast <2 x half> %a to <2 x i16>
+@@ -1001,7 +1003,11 @@
+ }
+ 
+ ; CHECK-LABEL: test_bitcast_2xi16_to_2xhalf(
+-; CHECK:      ld.param.u32         [[R:%r[0-9]+]], [test_bitcast_2xi16_to_2xhalf_param_0];
++; CHECK:      ld.param.v2.u16         {[[RS0:%rs[0-9]+]], [[RS1:%rs[0-9]+]]}, [test_bitcast_2xi16_to_2xhalf_param_0];
++; CHECK-DAG:  cvt.u32.u16     [[R0:%r[0-9]+]], [[RS0]];
++; CHECK-DAG:  cvt.u32.u16     [[R1:%r[0-9]+]], [[RS1]];
++; CHECK-DAG:  shl.b32         [[R1H:%r[0-9]+]], [[R1]], 16;
++; CHECK-DAG:  or.b32          [[R:%r[0-9]+]], [[R0]], [[R1H]];
+ ; CHECK:      st.param.b32    [func_retval0+0], [[R]];
+ ; CHECK:      ret;
+ define <2 x half> @test_bitcast_2xi16_to_2xhalf(<2 x i16> %a) #0 {
+diff -ruN --strip-trailing-cr a/llvm/test/CodeGen/NVPTX/i16x2-instructions.ll b/llvm/test/CodeGen/NVPTX/i16x2-instructions.ll
+--- a/llvm/test/CodeGen/NVPTX/i16x2-instructions.ll
++++ b/llvm/test/CodeGen/NVPTX/i16x2-instructions.ll
+@@ -1,523 +0,0 @@
+-; ## Support i16x2 instructions
+-; RUN: llc < %s -mtriple=nvptx64-nvidia-cuda -mcpu=sm_90 -mattr=+ptx80 -asm-verbose=false \
+-; RUN:          -O0 -disable-post-ra -frame-pointer=all -verify-machineinstrs \
+-; RUN: | FileCheck -allow-deprecated-dag-overlap -check-prefixes COMMON,I16x2 %s
+-; RUN: %if ptxas %{                                                           \
+-; RUN:   llc < %s -mtriple=nvptx64-nvidia-cuda -mcpu=sm_90 -asm-verbose=false \
+-; RUN:          -O0 -disable-post-ra -frame-pointer=all -verify-machineinstrs \
+-; RUN:   | %ptxas-verify -arch=sm_53                                          \
+-; RUN: %}
+-; ## No support for i16x2 instructions
+-; RUN: llc < %s -mtriple=nvptx64-nvidia-cuda -mcpu=sm_53 -asm-verbose=false \
+-; RUN:          -O0 -disable-post-ra -frame-pointer=all -verify-machineinstrs \
+-; RUN: | FileCheck -allow-deprecated-dag-overlap -check-prefixes COMMON,NO-I16x2 %s
+-; RUN: %if ptxas %{                                                           \
+-; RUN:   llc < %s -mtriple=nvptx64-nvidia-cuda -mcpu=sm_53 -asm-verbose=false \
+-; RUN:          -O0 -disable-post-ra -frame-pointer=all -verify-machineinstrs \
+-; RUN:   | %ptxas-verify -arch=sm_53                                          \
+-; RUN: %}
+-
+-target datalayout = "e-m:o-i64:64-i128:128-n32:64-S128"
+-
+-; COMMON-LABEL: test_ret_const(
+-; COMMON:     mov.u32         [[R:%r[0-9+]]], 131073;
+-; COMMON:     st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_ret_const() #0 {
+-  ret <2 x i16> <i16 1, i16 2>
+-}
+-
+-; COMMON-LABEL: test_extract_0(
+-; COMMON:      ld.param.u32   [[A:%r[0-9]+]], [test_extract_0_param_0];
+-; COMMON:      mov.b32        {[[RS:%rs[0-9]+]], tmp}, [[A]];
+-; COMMON:      cvt.u32.u16    [[R:%r[0-9]+]], [[RS]];
+-; COMMON:      st.param.b32    [func_retval0+0], [[R]];
+-; COMMON:      ret;
+-define i16 @test_extract_0(<2 x i16> %a) #0 {
+-  %e = extractelement <2 x i16> %a, i32 0
+-  ret i16 %e
+-}
+-
+-; COMMON-LABEL: test_extract_1(
+-; COMMON:      ld.param.u32   [[A:%r[0-9]+]], [test_extract_1_param_0];
+-; COMMON:      mov.b32        {tmp, [[RS:%rs[0-9]+]]}, [[A]];
+-; COMMON:      cvt.u32.u16    [[R:%r[0-9]+]], [[RS]];
+-; COMMON:      st.param.b32    [func_retval0+0], [[R]];
+-; COMMON:      ret;
+-define i16 @test_extract_1(<2 x i16> %a) #0 {
+-  %e = extractelement <2 x i16> %a, i32 1
+-  ret i16 %e
+-}
+-
+-; COMMON-LABEL: test_extract_i(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_extract_i_param_0];
+-; COMMON-DAG:  ld.param.u64    [[IDX:%rd[0-9]+]], [test_extract_i_param_1];
+-; COMMON-DAG:  setp.eq.s64     [[PRED:%p[0-9]+]], [[IDX]], 0;
+-; COMMON-DAG:  mov.b32         {[[E0:%rs[0-9]+]], [[E1:%rs[0-9]+]]}, [[A]];
+-; COMMON:      selp.b16        [[RS:%rs[0-9]+]], [[E0]], [[E1]], [[PRED]];
+-; COMMON:      cvt.u32.u16     [[R:%r[0-9]+]], [[RS]];
+-; COMMON:      st.param.b32    [func_retval0+0], [[R]];
+-; COMMON:      ret;
+-define i16 @test_extract_i(<2 x i16> %a, i64 %idx) #0 {
+-  %e = extractelement <2 x i16> %a, i64 %idx
+-  ret i16 %e
+-}
+-
+-; COMMON-LABEL: test_add(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_add_param_0];
+-; COMMON-DAG:  ld.param.u32    [[B:%r[0-9]+]], [test_add_param_1];
+-;
+-; I16x2-NEXT:  add.s16x2   [[R:%r[0-9]+]], [[A]], [[B]];
+-;
+-; NO-I16x2-DAG: mov.b32 	{[[RS0:%rs[0-9]+]], [[RS1:%rs[0-9]+]]}, [[A]];
+-; NO-I16x2-DAG: mov.b32 	{[[RS2:%rs[0-9]+]], [[RS3:%rs[0-9]+]]}, [[B]];
+-; NO-I16x2-DAG: add.s16 	[[RS4:%rs[0-9]+]], [[RS0]], [[RS2]];
+-; NO-I16x2-DAG: add.s16 	[[RS5:%rs[0-9]+]], [[RS1]], [[RS3]];
+-; NO-I16x2-DAG: mov.b32 	[[R:%r[0-9]+]], {[[RS4]], [[RS5]]};
+-;
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_add(<2 x i16> %a, <2 x i16> %b) #0 {
+-  %r = add <2 x i16> %a, %b
+-  ret <2 x i16> %r
+-}
+-
+-; Check that we can lower add with immediate arguments.
+-; COMMON-LABEL: test_add_imm_0(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_add_imm_0_param_0];
+-;
+-; I16x2:        mov.u32        [[I:%r[0-9+]]], 131073;
+-; I16x2:        add.s16x2      [[R:%r[0-9]+]], [[A]], [[I]];
+-;
+-;	NO-I16x2-DAG: mov.b32 	{[[RS0:%rs[0-9]+]], [[RS1:%rs[0-9]+]]}, [[A]];
+-;	NO-I16x2-DAG: add.s16 	[[RS2:%rs[0-9]+]], [[RS0]], 1;
+-;	NO-I16x2-DAG: add.s16 	[[RS3:%rs[0-9]+]], [[RS1]], 2;
+-;	NO-I16x2-DAG: mov.b32 	[[R:%r[0-9]+]], {[[RS2]], [[RS3]]};
+-;
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_add_imm_0(<2 x i16> %a) #0 {
+-  %r = add <2 x i16> <i16 1, i16 2>, %a
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_add_imm_1(
+-; COMMON-DAG:  ld.param.u32    [[B:%r[0-9]+]], [test_add_imm_1_param_0];
+-;
+-; I16x2:        mov.u32        [[I:%r[0-9+]]], 131073;
+-; I16x2:        add.s16x2      [[R:%r[0-9]+]], [[A]], [[I]];
+-;
+-;	NO-I16x2-DAG: mov.b32 	{[[RS0:%rs[0-9]+]], [[RS1:%rs[0-9]+]]}, [[A]];
+-;	NO-I16x2-DAG: add.s16 	[[RS2:%rs[0-9]+]], [[RS0]], 1;
+-;	NO-I16x2-DAG: add.s16 	[[RS3:%rs[0-9]+]], [[RS1]], 2;
+-;	NO-I16x2-DAG: mov.b32 	[[R:%r[0-9]+]], {[[RS2]], [[RS3]]};
+-;
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_add_imm_1(<2 x i16> %a) #0 {
+-  %r = add <2 x i16> %a, <i16 1, i16 2>
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_sub(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_sub_param_0];
+-;
+-; COMMON-DAG:  ld.param.u32    [[B:%r[0-9]+]], [test_sub_param_1];
+-; I16x2:   sub.s16x2   [[R:%r[0-9]+]], [[A]], [[B]];
+-;
+-;	NO-I16x2-DAG: mov.b32 	{[[RS0:%rs[0-9]+]], [[RS1:%rs[0-9]+]]}, [[A]];
+-;	NO-I16x2-DAG: mov.b32 	{[[RS2:%rs[0-9]+]], [[RS3:%rs[0-9]+]]}, [[B]];
+-;	NO-I16x2-DAG: sub.s16 	[[RS4:%rs[0-9]+]], [[RS0]], [[RS2]];
+-;	NO-I16x2-DAG: sub.s16 	[[RS5:%rs[0-9]+]], [[RS1]], [[RS3]];
+-;	NO-I16x2-DAG: mov.b32 	[[R:%r[0-9]+]], {[[RS4]], [[RS5]]};
+-;
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_sub(<2 x i16> %a, <2 x i16> %b) #0 {
+-  %r = sub <2 x i16> %a, %b
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_smax(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_smax_param_0];
+-;
+-; COMMON-DAG:  ld.param.u32    [[B:%r[0-9]+]], [test_smax_param_1];
+-; I16x2:   max.s16x2   [[R:%r[0-9]+]], [[A]], [[B]];
+-;
+-;	NO-I16x2-DAG: mov.b32 	{[[RS0:%rs[0-9]+]], [[RS1:%rs[0-9]+]]}, [[A]];
+-;	NO-I16x2-DAG: mov.b32 	{[[RS2:%rs[0-9]+]], [[RS3:%rs[0-9]+]]}, [[B]];
+-;	NO-I16x2-DAG: max.s16 	[[RS4:%rs[0-9]+]], [[RS0]], [[RS2]];
+-;	NO-I16x2-DAG: max.s16 	[[RS5:%rs[0-9]+]], [[RS1]], [[RS3]];
+-;	NO-I16x2-DAG: mov.b32 	[[R:%r[0-9]+]], {[[RS4]], [[RS5]]};
+-;
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_smax(<2 x i16> %a, <2 x i16> %b) #0 {
+-  %cmp = icmp sgt <2 x i16> %a, %b
+-  %r = select <2 x i1> %cmp, <2 x i16> %a, <2 x i16> %b
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_umax(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_umax_param_0];
+-;
+-; COMMON-DAG:  ld.param.u32    [[B:%r[0-9]+]], [test_umax_param_1];
+-; I16x2:   max.u16x2   [[R:%r[0-9]+]], [[A]], [[B]];
+-;
+-;	NO-I16x2-DAG: mov.b32 	{[[RS0:%rs[0-9]+]], [[RS1:%rs[0-9]+]]}, [[A]];
+-;	NO-I16x2-DAG: mov.b32 	{[[RS2:%rs[0-9]+]], [[RS3:%rs[0-9]+]]}, [[B]];
+-;	NO-I16x2-DAG: max.u16 	[[RS4:%rs[0-9]+]], [[RS0]], [[RS2]];
+-;	NO-I16x2-DAG: max.u16 	[[RS5:%rs[0-9]+]], [[RS1]], [[RS3]];
+-;	NO-I16x2-DAG: mov.b32 	[[R:%r[0-9]+]], {[[RS4]], [[RS5]]};
+-;
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_umax(<2 x i16> %a, <2 x i16> %b) #0 {
+-  %cmp = icmp ugt <2 x i16> %a, %b
+-  %r = select <2 x i1> %cmp, <2 x i16> %a, <2 x i16> %b
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_smin(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_smin_param_0];
+-;
+-; COMMON-DAG:  ld.param.u32    [[B:%r[0-9]+]], [test_smin_param_1];
+-; I16x2:   min.s16x2   [[R:%r[0-9]+]], [[A]], [[B]];
+-;
+-;	NO-I16x2-DAG: mov.b32 	{[[RS0:%rs[0-9]+]], [[RS1:%rs[0-9]+]]}, [[A]];
+-;	NO-I16x2-DAG: mov.b32 	{[[RS2:%rs[0-9]+]], [[RS3:%rs[0-9]+]]}, [[B]];
+-;	NO-I16x2-DAG: min.s16 	[[RS4:%rs[0-9]+]], [[RS0]], [[RS2]];
+-;	NO-I16x2-DAG: min.s16 	[[RS5:%rs[0-9]+]], [[RS1]], [[RS3]];
+-;	NO-I16x2-DAG: mov.b32 	[[R:%r[0-9]+]], {[[RS4]], [[RS5]]};
+-;
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_smin(<2 x i16> %a, <2 x i16> %b) #0 {
+-  %cmp = icmp sle <2 x i16> %a, %b
+-  %r = select <2 x i1> %cmp, <2 x i16> %a, <2 x i16> %b
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_umin(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_umin_param_0];
+-;
+-; COMMON-DAG:  ld.param.u32    [[B:%r[0-9]+]], [test_umin_param_1];
+-; I16x2:   min.u16x2   [[R:%r[0-9]+]], [[A]], [[B]];
+-;
+-;	NO-I16x2-DAG: mov.b32 	{[[RS0:%rs[0-9]+]], [[RS1:%rs[0-9]+]]}, [[A]];
+-;	NO-I16x2-DAG: mov.b32 	{[[RS2:%rs[0-9]+]], [[RS3:%rs[0-9]+]]}, [[B]];
+-;	NO-I16x2-DAG: min.u16 	[[RS4:%rs[0-9]+]], [[RS0]], [[RS2]];
+-;	NO-I16x2-DAG: min.u16 	[[RS5:%rs[0-9]+]], [[RS1]], [[RS3]];
+-;	NO-I16x2-DAG: mov.b32 	[[R:%r[0-9]+]], {[[RS4]], [[RS5]]};
+-;
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_umin(<2 x i16> %a, <2 x i16> %b) #0 {
+-  %cmp = icmp ule <2 x i16> %a, %b
+-  %r = select <2 x i1> %cmp, <2 x i16> %a, <2 x i16> %b
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_mul(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_mul_param_0];
+-; COMMON-DAG:  ld.param.u32    [[B:%r[0-9]+]], [test_mul_param_1];
+-;
+-;	COMMON-DAG: mov.b32 	    {[[RS0:%rs[0-9]+]], [[RS1:%rs[0-9]+]]}, [[A]];
+-;	COMMON-DAG: mov.b32 	    {[[RS2:%rs[0-9]+]], [[RS3:%rs[0-9]+]]}, [[B]];
+-;	COMMON-DAG: mul.lo.s16 	[[RS4:%rs[0-9]+]], [[RS0]], [[RS2]];
+-;	COMMON-DAG: mul.lo.s16 	[[RS5:%rs[0-9]+]], [[RS1]], [[RS3]];
+-;	COMMON-DAG: mov.b32 	    [[R:%r[0-9]+]], {[[RS4]], [[RS5]]};
+-;
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_mul(<2 x i16> %a, <2 x i16> %b) #0 {
+-  %r = mul <2 x i16> %a, %b
+-  ret <2 x i16> %r
+-}
+-
+-
+-; COMMON-LABEL: .func test_ldst_v2i16(
+-; COMMON-DAG:    ld.param.u64    [[A:%rd[0-9]+]], [test_ldst_v2i16_param_0];
+-; COMMON-DAG:    ld.param.u64    [[B:%rd[0-9]+]], [test_ldst_v2i16_param_1];
+-; COMMON-DAG:    ld.u32          [[E:%r[0-9]+]], [[[A]]];
+-; COMMON-DAG:    st.u32          [[[B]]], [[E]];
+-; COMMON:        ret;
+-define void @test_ldst_v2i16(ptr %a, ptr %b) {
+-  %t1 = load <2 x i16>, ptr %a
+-  store <2 x i16> %t1, ptr %b, align 16
+-  ret void
+-}
+-
+-; COMMON-LABEL: .func test_ldst_v3i16(
+-; COMMON-DAG:    ld.param.u64    %[[A:rd[0-9]+]], [test_ldst_v3i16_param_0];
+-; COMMON-DAG:    ld.param.u64    %[[B:rd[0-9]+]], [test_ldst_v3i16_param_1];
+-; -- v3 is inconvenient to capture as it's lowered as ld.b64 + fair
+-;    number of bitshifting instructions that may change at llvm's whim.
+-;    So we only verify that we only issue correct number of writes using
+-;    correct offset, but not the values we write.
+-; COMMON-DAG:    ld.u64
+-; COMMON-DAG:    st.u32          [%[[B]]],
+-; COMMON-DAG:    st.u16          [%[[B]]+4],
+-; COMMON:        ret;
+-define void @test_ldst_v3i16(ptr %a, ptr %b) {
+-  %t1 = load <3 x i16>, ptr %a
+-  store <3 x i16> %t1, ptr %b, align 16
+-  ret void
+-}
+-
+-; COMMON-LABEL: .func test_ldst_v4i16(
+-; COMMON-DAG:    ld.param.u64    %[[A:rd[0-9]+]], [test_ldst_v4i16_param_0];
+-; COMMON-DAG:    ld.param.u64    %[[B:rd[0-9]+]], [test_ldst_v4i16_param_1];
+-; COMMON-DAG:    ld.v4.u16       {[[E0:%rs[0-9]+]], [[E1:%rs[0-9]+]], [[E2:%rs[0-9]+]], [[E3:%rs[0-9]+]]}, [%[[A]]];
+-; COMMON-DAG:    st.v4.u16       [%[[B]]], {[[E0]], [[E1]], [[E2]], [[E3]]};
+-; COMMON:        ret;
+-define void @test_ldst_v4i16(ptr %a, ptr %b) {
+-  %t1 = load <4 x i16>, ptr %a
+-  store <4 x i16> %t1, ptr %b, align 16
+-  ret void
+-}
+-
+-; COMMON-LABEL: .func test_ldst_v8i16(
+-; COMMON-DAG:    ld.param.u64    %[[A:rd[0-9]+]], [test_ldst_v8i16_param_0];
+-; COMMON-DAG:    ld.param.u64    %[[B:rd[0-9]+]], [test_ldst_v8i16_param_1];
+-; COMMON-DAG:    ld.v4.b32       {[[E0:%r[0-9]+]], [[E1:%r[0-9]+]], [[E2:%r[0-9]+]], [[E3:%r[0-9]+]]}, [%[[A]]];
+-; COMMON-DAG:    st.v4.b32       [%[[B]]], {[[E0]], [[E1]], [[E2]], [[E3]]};
+-; COMMON:        ret;
+-define void @test_ldst_v8i16(ptr %a, ptr %b) {
+-  %t1 = load <8 x i16>, ptr %a
+-  store <8 x i16> %t1, ptr %b, align 16
+-  ret void
+-}
+-
+-declare <2 x i16> @test_callee(<2 x i16> %a, <2 x i16> %b) #0
+-
+-; COMMON-LABEL: test_call(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_call_param_0];
+-; COMMON-DAG:  ld.param.u32    [[B:%r[0-9]+]], [test_call_param_1];
+-; COMMON:      {
+-; COMMON-DAG:  .param .align 4 .b8 param0[4];
+-; COMMON-DAG:  .param .align 4 .b8 param1[4];
+-; COMMON-DAG:  st.param.b32    [param0+0], [[A]];
+-; COMMON-DAG:  st.param.b32    [param1+0], [[B]];
+-; COMMON-DAG:  .param .align 4 .b8 retval0[4];
+-; COMMON:      call.uni (retval0),
+-; COMMON-NEXT:        test_callee,
+-; COMMON:      );
+-; COMMON-NEXT: ld.param.b32    [[R:%r[0-9]+]], [retval0+0];
+-; COMMON-NEXT: }
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_call(<2 x i16> %a, <2 x i16> %b) #0 {
+-  %r = call <2 x i16> @test_callee(<2 x i16> %a, <2 x i16> %b)
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_call_flipped(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_call_flipped_param_0];
+-; COMMON-DAG:  ld.param.u32    [[B:%r[0-9]+]], [test_call_flipped_param_1];
+-; COMMON:      {
+-; COMMON-DAG:  .param .align 4 .b8 param0[4];
+-; COMMON-DAG:  .param .align 4 .b8 param1[4];
+-; COMMON-DAG:  st.param.b32    [param0+0], [[B]];
+-; COMMON-DAG:  st.param.b32    [param1+0], [[A]];
+-; COMMON-DAG:  .param .align 4 .b8 retval0[4];
+-; COMMON:      call.uni (retval0),
+-; COMMON-NEXT:        test_callee,
+-; COMMON:      );
+-; COMMON-NEXT: ld.param.b32    [[R:%r[0-9]+]], [retval0+0];
+-; COMMON-NEXT: }
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_call_flipped(<2 x i16> %a, <2 x i16> %b) #0 {
+-  %r = call <2 x i16> @test_callee(<2 x i16> %b, <2 x i16> %a)
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_tailcall_flipped(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_tailcall_flipped_param_0];
+-; COMMON-DAG:  ld.param.u32    [[B:%r[0-9]+]], [test_tailcall_flipped_param_1];
+-; COMMON:      {
+-; COMMON-DAG:  .param .align 4 .b8 param0[4];
+-; COMMON-DAG:  .param .align 4 .b8 param1[4];
+-; COMMON-DAG:  st.param.b32    [param0+0], [[B]];
+-; COMMON-DAG:  st.param.b32    [param1+0], [[A]];
+-; COMMON-DAG:  .param .align 4 .b8 retval0[4];
+-; COMMON:      call.uni (retval0),
+-; COMMON-NEXT:        test_callee,
+-; COMMON:      );
+-; COMMON-NEXT: ld.param.b32    [[R:%r[0-9]+]], [retval0+0];
+-; COMMON-NEXT: }
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_tailcall_flipped(<2 x i16> %a, <2 x i16> %b) #0 {
+-  %r = tail call <2 x i16> @test_callee(<2 x i16> %b, <2 x i16> %a)
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_select(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_select_param_0];
+-; COMMON-DAG:  ld.param.u32    [[B:%r[0-9]+]], [test_select_param_1];
+-; COMMON-DAG:  ld.param.u8     [[C:%rs[0-9]+]], [test_select_param_2]
+-; COMMON-DAG:  setp.eq.b16     [[PRED:%p[0-9]+]], %rs{{.*}}, 1;
+-; COMMON-NEXT: selp.b32        [[R:%r[0-9]+]], [[A]], [[B]], [[PRED]];
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_select(<2 x i16> %a, <2 x i16> %b, i1 zeroext %c) #0 {
+-  %r = select i1 %c, <2 x i16> %a, <2 x i16> %b
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_select_cc(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_select_cc_param_0];
+-; COMMON-DAG:  ld.param.u32    [[B:%r[0-9]+]], [test_select_cc_param_1];
+-; COMMON-DAG:  ld.param.u32    [[C:%r[0-9]+]], [test_select_cc_param_2];
+-; COMMON-DAG:  ld.param.u32    [[D:%r[0-9]+]], [test_select_cc_param_3];
+-; COMMON-DAG:  mov.b32        {[[C0:%rs[0-9]+]], [[C1:%rs[0-9]+]]}, [[C]]
+-; COMMON-DAG:  mov.b32        {[[D0:%rs[0-9]+]], [[D1:%rs[0-9]+]]}, [[D]]
+-; COMMON-DAG:  setp.ne.s16    [[P0:%p[0-9]+]], [[C0]], [[D0]]
+-; COMMON-DAG:  setp.ne.s16    [[P1:%p[0-9]+]], [[C1]], [[D1]]
+-; COMMON-DAG:  mov.b32         {[[A0:%rs[0-9]+]], [[A1:%rs[0-9]+]]}, [[A]]
+-; COMMON-DAG:  mov.b32         {[[B0:%rs[0-9]+]], [[B1:%rs[0-9]+]]}, [[B]]
+-; COMMON-DAG:  selp.b16        [[R0:%rs[0-9]+]], [[A0]], [[B0]], [[P0]];
+-; COMMON-DAG:  selp.b16        [[R1:%rs[0-9]+]], [[A1]], [[B1]], [[P1]];
+-; COMMON:      mov.b32         [[R:%r[0-9]+]], {[[R0]], [[R1]]}
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_select_cc(<2 x i16> %a, <2 x i16> %b, <2 x i16> %c, <2 x i16> %d) #0 {
+-  %cc = icmp ne <2 x i16> %c, %d
+-  %r = select <2 x i1> %cc, <2 x i16> %a, <2 x i16> %b
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_select_cc_i32_i16(
+-; COMMON-DAG:  ld.param.v2.u32    {[[A0:%r[0-9]+]], [[A1:%r[0-9]+]]}, [test_select_cc_i32_i16_param_0];
+-; COMMON-DAG:  ld.param.v2.u32    {[[B0:%r[0-9]+]], [[B1:%r[0-9]+]]}, [test_select_cc_i32_i16_param_1];
+-; COMMON-DAG:  ld.param.u32    [[C:%r[0-9]+]], [test_select_cc_i32_i16_param_2];
+-; COMMON-DAG:  ld.param.u32    [[D:%r[0-9]+]], [test_select_cc_i32_i16_param_3];
+-; COMMON-DAG: mov.b32         {[[C0:%rs[0-9]+]], [[C1:%rs[0-9]+]]}, [[C]]
+-; COMMON-DAG: mov.b32         {[[D0:%rs[0-9]+]], [[D1:%rs[0-9]+]]}, [[D]]
+-; COMMON-DAG: setp.ne.s16    [[P0:%p[0-9]+]], [[C0]], [[D0]]
+-; COMMON-DAG: setp.ne.s16    [[P1:%p[0-9]+]], [[C1]], [[D1]]
+-; COMMON-DAG: selp.b32        [[R0:%r[0-9]+]], [[A0]], [[B0]], [[P0]];
+-; COMMON-DAG: selp.b32        [[R1:%r[0-9]+]], [[A1]], [[B1]], [[P1]];
+-; COMMON-NEXT: st.param.v2.b32    [func_retval0+0], {[[R0]], [[R1]]};
+-; COMMON-NEXT: ret;
+-define <2 x i32> @test_select_cc_i32_i16(<2 x i32> %a, <2 x i32> %b,
+-                                           <2 x i16> %c, <2 x i16> %d) #0 {
+-  %cc = icmp ne <2 x i16> %c, %d
+-  %r = select <2 x i1> %cc, <2 x i32> %a, <2 x i32> %b
+-  ret <2 x i32> %r
+-}
+-
+-; COMMON-LABEL: test_select_cc_i16_i32(
+-; COMMON-DAG:  ld.param.u32    [[A:%r[0-9]+]], [test_select_cc_i16_i32_param_0];
+-; COMMON-DAG:  ld.param.u32    [[B:%r[0-9]+]], [test_select_cc_i16_i32_param_1];
+-; COMMON-DAG:  ld.param.v2.u32 {[[C0:%r[0-9]+]], [[C1:%r[0-9]+]]}, [test_select_cc_i16_i32_param_2];
+-; COMMON-DAG:  ld.param.v2.u32 {[[D0:%r[0-9]+]], [[D1:%r[0-9]+]]}, [test_select_cc_i16_i32_param_3];
+-; COMMON-DAG:  setp.ne.s32    [[P0:%p[0-9]+]], [[C0]], [[D0]]
+-; COMMON-DAG:  setp.ne.s32    [[P1:%p[0-9]+]], [[C1]], [[D1]]
+-; COMMON-DAG:  mov.b32         {[[A0:%rs[0-9]+]], [[A1:%rs[0-9]+]]}, [[A]]
+-; COMMON-DAG:  mov.b32         {[[B0:%rs[0-9]+]], [[B1:%rs[0-9]+]]}, [[B]]
+-; COMMON-DAG:  selp.b16        [[R0:%rs[0-9]+]], [[A0]], [[B0]], [[P0]];
+-; COMMON-DAG:  selp.b16        [[R1:%rs[0-9]+]], [[A1]], [[B1]], [[P1]];
+-; COMMON:      mov.b32         [[R:%r[0-9]+]], {[[R0]], [[R1]]}
+-; COMMON-NEXT: st.param.b32    [func_retval0+0], [[R]];
+-; COMMON-NEXT: ret;
+-define <2 x i16> @test_select_cc_i16_i32(<2 x i16> %a, <2 x i16> %b,
+-                                          <2 x i32> %c, <2 x i32> %d) #0 {
+-  %cc = icmp ne <2 x i32> %c, %d
+-  %r = select <2 x i1> %cc, <2 x i16> %a, <2 x i16> %b
+-  ret <2 x i16> %r
+-}
+-
+-
+-; COMMON-LABEL: test_trunc_2xi32(
+-; COMMON:      ld.param.v2.u32 {[[A0:%r[0-9]+]], [[A1:%r[0-9]+]]}, [test_trunc_2xi32_param_0];
+-; COMMON-DAG:  cvt.u16.u32  [[R0:%rs[0-9]+]], [[A0]];
+-; COMMON-DAG:  cvt.u16.u32  [[R1:%rs[0-9]+]], [[A1]];
+-; COMMON:      mov.b32         [[R:%r[0-9]+]], {[[R0]], [[R1]]}
+-; COMMON:      st.param.b32    [func_retval0+0], [[R]];
+-; COMMON:      ret;
+-define <2 x i16> @test_trunc_2xi32(<2 x i32> %a) #0 {
+-  %r = trunc <2 x i32> %a to <2 x i16>
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_trunc_2xi64(
+-; COMMON:      ld.param.v2.u64 {[[A0:%rd[0-9]+]], [[A1:%rd[0-9]+]]}, [test_trunc_2xi64_param_0];
+-; COMMON-DAG:  cvt.u16.u64  [[R0:%rs[0-9]+]], [[A0]];
+-; COMMON-DAG:  cvt.u16.u64  [[R1:%rs[0-9]+]], [[A1]];
+-; COMMON:      mov.b32         [[R:%r[0-9]+]], {[[R0]], [[R1]]}
+-; COMMON:      st.param.b32    [func_retval0+0], [[R]];
+-; COMMON:      ret;
+-define <2 x i16> @test_trunc_2xi64(<2 x i64> %a) #0 {
+-  %r = trunc <2 x i64> %a to <2 x i16>
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_zext_2xi32(
+-; COMMON:      ld.param.u32    [[A:%r[0-9]+]], [test_zext_2xi32_param_0];
+-; COMMON:      mov.b32         {[[A0:%rs[0-9]+]], [[A1:%rs[0-9]+]]}, [[A]]
+-; COMMON-DAG:  cvt.u32.u16     [[R0:%r[0-9]+]], [[A0]];
+-; COMMON-DAG:  cvt.u32.u16     [[R1:%r[0-9]+]], [[A1]];
+-; COMMON-NEXT: st.param.v2.b32 [func_retval0+0], {[[R0]], [[R1]]};
+-; COMMON:      ret;
+-define <2 x i32> @test_zext_2xi32(<2 x i16> %a) #0 {
+-  %r = zext <2 x i16> %a to <2 x i32>
+-  ret <2 x i32> %r
+-}
+-
+-; COMMON-LABEL: test_zext_2xi64(
+-; COMMON:      ld.param.u32    [[A:%r[0-9]+]], [test_zext_2xi64_param_0];
+-; COMMON:      mov.b32         {[[A0:%rs[0-9]+]], [[A1:%rs[0-9]+]]}, [[A]]
+-; COMMON-DAG:  cvt.u64.u16     [[R0:%rd[0-9]+]], [[A0]];
+-; COMMON-DAG:  cvt.u64.u16     [[R1:%rd[0-9]+]], [[A1]];
+-; COMMON-NEXT: st.param.v2.b64 [func_retval0+0], {[[R0]], [[R1]]};
+-; COMMON:      ret;
+-define <2 x i64> @test_zext_2xi64(<2 x i16> %a) #0 {
+-  %r = zext <2 x i16> %a to <2 x i64>
+-  ret <2 x i64> %r
+-}
+-
+-; COMMON-LABEL: test_bitcast_i32_to_2xi16(
+-; COMMON: ld.param.u32 	[[R:%r[0-9]+]], [test_bitcast_i32_to_2xi16_param_0];
+-; COMMON: st.param.b32 	[func_retval0+0], [[R]];
+-; COMMON: ret;
+-define <2 x i16> @test_bitcast_i32_to_2xi16(i32 %a) #0 {
+-  %r = bitcast i32 %a to <2 x i16>
+-  ret <2 x i16> %r
+-}
+-
+-; COMMON-LABEL: test_bitcast_2xi16_to_i32(
+-; COMMON: ld.param.u32 	[[R:%r[0-9]+]], [test_bitcast_2xi16_to_i32_param_0];
+-; COMMON: st.param.b32 	[func_retval0+0], [[R]];
+-; COMMON: ret;
+-define i32 @test_bitcast_2xi16_to_i32(<2 x i16> %a) #0 {
+-  %r = bitcast <2 x i16> %a to i32
+-  ret i32 %r
+-}
+-
+-; COMMON-LABEL: test_shufflevector(
+-; COMMON:	ld.param.u32 	[[R:%r[0-9]+]], [test_shufflevector_param_0];
+-; COMMON:	mov.b32 	{[[RS0:%rs[0-9]+]], [[RS1:%rs[0-9]+]]}, [[R]];
+-; COMMON:	mov.b32 	[[R1:%r[0-9]+]], {[[RS1]], [[RS0]]};
+-; COMMON:	st.param.b32 	[func_retval0+0], [[R1]];
+-; COMMON:	ret;
+-define <2 x i16> @test_shufflevector(<2 x i16> %a) #0 {
+-  %s = shufflevector <2 x i16> %a, <2 x i16> undef, <2 x i32> <i32 1, i32 0>
+-  ret <2 x i16> %s
+-}
+-
+-; COMMON-LABEL: test_insertelement(
+-; COMMON:  ld.param.u16 	[[B:%rs[0-9]+]], [test_insertelement_param_1];
+-; COMMON:	ld.param.u32 	[[A:%r[0-9]+]], [test_insertelement_param_0];
+-; COMMON:	{ .reg .b16 tmp; mov.b32 {[[R0:%rs[0-9]+]], tmp}, [[A]]; }
+-; COMMON:	mov.b32 	[[R1:%r[0-9]+]], {[[R0]], [[B]]};
+-; COMMON:	st.param.b32 	[func_retval0+0], [[R1]];
+-; COMMON:	ret;
+-define <2 x i16> @test_insertelement(<2 x i16> %a, i16 %x) #0 {
+-  %i = insertelement <2 x i16> %a, i16 %x, i64 1
+-  ret <2 x i16> %i
+-}
+-
+-attributes #0 = { nounwind }
+diff -ruN --strip-trailing-cr a/llvm/test/CodeGen/NVPTX/load-with-non-coherent-cache.ll b/llvm/test/CodeGen/NVPTX/load-with-non-coherent-cache.ll
+--- a/llvm/test/CodeGen/NVPTX/load-with-non-coherent-cache.ll
++++ b/llvm/test/CodeGen/NVPTX/load-with-non-coherent-cache.ll
+@@ -80,9 +80,9 @@
+ }
+ 
+ ; SM20-LABEL: .visible .entry foo8(
+-; SM20: ld.global.u32
++; SM20: ld.global.v2.u16
+ ; SM35-LABEL: .visible .entry foo8(
+-; SM35: ld.global.nc.u32
++; SM35: ld.global.nc.v2.u16
+ define void @foo8(ptr noalias readonly %from, ptr %to) {
+   %1 = load <2 x i16>, ptr %from
+   store <2 x i16> %1, ptr %to
+diff -ruN --strip-trailing-cr a/llvm/test/CodeGen/NVPTX/param-load-store.ll b/llvm/test/CodeGen/NVPTX/param-load-store.ll
+--- a/llvm/test/CodeGen/NVPTX/param-load-store.ll
++++ b/llvm/test/CodeGen/NVPTX/param-load-store.ll
+@@ -326,8 +326,7 @@
+ ; CHECK-LABEL: test_v3i16(
+ ; CHECK-NEXT: .param .align 8 .b8 test_v3i16_param_0[8]
+ ; CHECK-DAG:  ld.param.u16    [[E2:%rs[0-9]+]], [test_v3i16_param_0+4];
+-; CHECK-DAG:  ld.param.u32    [[R:%r[0-9]+]], [test_v3i16_param_0];
+-; CHECK-DAG:  mov.b32 {[[E0:%rs[0-9]+]], [[E1:%rs[0-9]+]]}, [[R]];
++; CHECK-DAG:  ld.param.v2.u16 {[[E0:%rs[0-9]+]], [[E1:%rs[0-9]+]]}, [test_v3i16_param_0];
+ ; CHECK:      .param .align 8 .b8 param0[8];
+ ; CHECK:      st.param.v2.b16 [param0+0], {[[E0]], [[E1]]};
+ ; CHECK:      st.param.b16    [param0+4], [[E2]];
+@@ -347,14 +346,14 @@
+ ; CHECK: .func  (.param .align 8 .b8 func_retval0[8])
+ ; CHECK-LABEL: test_v4i16(
+ ; CHECK-NEXT: .param .align 8 .b8 test_v4i16_param_0[8]
+-; CHECK:      ld.param.v2.u32 {[[E0:%r[0-9]+]], [[E1:%r[0-9]+]]}, [test_v4i16_param_0]
++; CHECK:      ld.param.v4.u16 {[[E0:%rs[0-9]+]], [[E1:%rs[0-9]+]], [[E2:%rs[0-9]+]], [[E3:%rs[0-9]+]]}, [test_v4i16_param_0]
+ ; CHECK:      .param .align 8 .b8 param0[8];
+-; CHECK:      st.param.v2.b32 [param0+0], {[[E0]], [[E1]]};
++; CHECK:      st.param.v4.b16 [param0+0], {[[E0]], [[E1]], [[E2]], [[E3]]};
+ ; CHECK:      .param .align 8 .b8 retval0[8];
+ ; CHECK:      call.uni (retval0),
+ ; CHECK-NEXT: test_v4i16,
+-; CHECK:      ld.param.v2.b32 {[[RE0:%r[0-9]+]], [[RE1:%r[0-9]+]]}, [retval0+0];
+-; CHECK:      st.param.v2.b32 [func_retval0+0], {[[RE0]], [[RE1]]}
++; CHECK:      ld.param.v4.b16 {[[RE0:%rs[0-9]+]], [[RE1:%rs[0-9]+]], [[RE2:%rs[0-9]+]], [[RE3:%rs[0-9]+]]}, [retval0+0];
++; CHECK:      st.param.v4.b16 [func_retval0+0], {[[RE0]], [[RE1]], [[RE2]], [[RE3]]}
+ ; CHECK-NEXT: ret;
+ define <4 x i16> @test_v4i16(<4 x i16> %a) {
+        %r = tail call <4 x i16> @test_v4i16(<4 x i16> %a);
+@@ -366,10 +365,6 @@
+ ; CHECK-NEXT: .param .align 16 .b8 test_v5i16_param_0[16]
+ ; CHECK-DAG:  ld.param.u16    [[E4:%rs[0-9]+]], [test_v5i16_param_0+8];
+ ; CHECK-DAG:  ld.param.v4.u16 {[[E0:%rs[0-9]+]], [[E1:%rs[0-9]+]], [[E2:%rs[0-9]+]], [[E3:%rs[0-9]+]]}, [test_v5i16_param_0]
+-; CHECK-DAG:	mov.b32 	[[R0:%r[0-9]+]], {[[E0]], [[E1]]};
+-; CHECK-DAG:	mov.b32 	{[[E0:%rs[0-9]+]], [[E1:%rs[0-9]+]]}, [[R0]];
+-; CHECK-DAG:	mov.b32 	[[R1:%r[0-9]+]], {[[E2]], [[E3]]};
+-; CHECK-DAG:	mov.b32 	{[[E2:%rs[0-9]+]], [[E3:%rs[0-9]+]]}, [[R1]];
+ ; CHECK:      .param .align 16 .b8 param0[16];
+ ; CHECK-DAG:  st.param.v4.b16 [param0+0], {[[E0]], [[E1]], [[E2]], [[E3]]};
+ ; CHECK-DAG:  st.param.b16    [param0+8], [[E4]];
+diff -ruN --strip-trailing-cr a/llvm/test/CodeGen/NVPTX/vec-param-load.ll b/llvm/test/CodeGen/NVPTX/vec-param-load.ll
+--- a/llvm/test/CodeGen/NVPTX/vec-param-load.ll
++++ b/llvm/test/CodeGen/NVPTX/vec-param-load.ll
+@@ -70,10 +70,14 @@
+ 
+ define <16 x i16> @test_v16i16(<16 x i16> %a) {
+ ; CHECK-LABEL: test_v16i16(
+-; CHECK-DAG: ld.param.v4.u32     {[[V_8_15:(%r[0-9]+[, ]*){4}]]}, [test_v16i16_param_0+16];
+-; CHECK-DAG: ld.param.v4.u32     {[[V_0_7:(%r[0-9]+[, ]*){4}]]}, [test_v16i16_param_0];
+-; CHECK-DAG: st.param.v4.b32     [func_retval0+0], {[[V_0_7]]}
+-; CHECK-DAG: st.param.v4.b32     [func_retval0+16], {[[V_8_15]]}
++; CHECK-DAG: ld.param.v4.u16     {[[V_12_15:(%rs[0-9]+[, ]*){4}]]}, [test_v16i16_param_0+24];
++; CHECK-DAG: ld.param.v4.u16     {[[V_8_11:(%rs[0-9]+[, ]*){4}]]}, [test_v16i16_param_0+16];
++; CHECK-DAG: ld.param.v4.u16     {[[V_4_7:(%rs[0-9]+[, ]*){4}]]}, [test_v16i16_param_0+8];
++; CHECK-DAG: ld.param.v4.u16     {[[V_0_3:(%rs[0-9]+[, ]*){4}]]}, [test_v16i16_param_0];
++; CHECK-DAG: st.param.v4.b16     [func_retval0+0], {[[V_0_3]]}
++; CHECK-DAG: st.param.v4.b16     [func_retval0+8], {[[V_4_7]]}
++; CHECK-DAG: st.param.v4.b16     [func_retval0+16], {[[V_8_11]]}
++; CHECK-DAG: st.param.v4.b16     [func_retval0+24], {[[V_12_15]]}
+ ; CHECK: ret;
+   ret <16 x i16> %a
+ }
+diff -ruN --strip-trailing-cr a/llvm/test/Transforms/SLPVectorizer/NVPTX/non-vectorizable-intrinsic-inseltpoison.ll b/llvm/test/Transforms/SLPVectorizer/NVPTX/non-vectorizable-intrinsic-inseltpoison.ll
+--- a/llvm/test/Transforms/SLPVectorizer/NVPTX/non-vectorizable-intrinsic-inseltpoison.ll
++++ b/llvm/test/Transforms/SLPVectorizer/NVPTX/non-vectorizable-intrinsic-inseltpoison.ll
+@@ -0,0 +1,57 @@
++; NOTE: Assertions have been autogenerated by utils/update_test_checks.py
++; RUN: opt < %s -passes=slp-vectorizer -o - -S -slp-threshold=-1000 | FileCheck %s
++
++target datalayout = "e-p:32:32-i64:64-v16:16-v32:32-n16:32:64"
++target triple = "nvptx--nvidiacl"
++
++; CTLZ cannot be vectorized currently because the second argument is a scalar
++; for both the scalar and vector forms of the intrinsic. In the future it
++; should be possible to vectorize such functions.
++; Test causes an assert if LLVM tries to vectorize CTLZ.
++
++define <2 x i8> @cltz_test(<2 x i8> %x) #0 {
++; CHECK-LABEL: @cltz_test(
++; CHECK-NEXT:  entry:
++; CHECK-NEXT:    [[TMP0:%.*]] = extractelement <2 x i8> [[X:%.*]], i32 0
++; CHECK-NEXT:    [[CALL_I:%.*]] = call i8 @llvm.ctlz.i8(i8 [[TMP0]], i1 false)
++; CHECK-NEXT:    [[VECINIT:%.*]] = insertelement <2 x i8> poison, i8 [[CALL_I]], i32 0
++; CHECK-NEXT:    [[TMP1:%.*]] = extractelement <2 x i8> [[X]], i32 1
++; CHECK-NEXT:    [[CALL_I4:%.*]] = call i8 @llvm.ctlz.i8(i8 [[TMP1]], i1 false)
++; CHECK-NEXT:    [[VECINIT2:%.*]] = insertelement <2 x i8> [[VECINIT]], i8 [[CALL_I4]], i32 1
++; CHECK-NEXT:    ret <2 x i8> [[VECINIT2]]
++;
++entry:
++  %0 = extractelement <2 x i8> %x, i32 0
++  %call.i = call i8 @llvm.ctlz.i8(i8 %0, i1 false)
++  %vecinit = insertelement <2 x i8> poison, i8 %call.i, i32 0
++  %1 = extractelement <2 x i8> %x, i32 1
++  %call.i4 = call i8 @llvm.ctlz.i8(i8 %1, i1 false)
++  %vecinit2 = insertelement <2 x i8> %vecinit, i8 %call.i4, i32 1
++  ret <2 x i8> %vecinit2
++}
++
++define <2 x i8> @cltz_test2(<2 x i8> %x) #1 {
++; CHECK-LABEL: @cltz_test2(
++; CHECK-NEXT:  entry:
++; CHECK-NEXT:    [[TMP0:%.*]] = extractelement <2 x i8> [[X:%.*]], i32 0
++; CHECK-NEXT:    [[TMP1:%.*]] = extractelement <2 x i8> [[X]], i32 1
++; CHECK-NEXT:    [[CALL_I:%.*]] = call i8 @llvm.ctlz.i8(i8 [[TMP0]], i1 false)
++; CHECK-NEXT:    [[CALL_I4:%.*]] = call i8 @llvm.ctlz.i8(i8 [[TMP1]], i1 false)
++; CHECK-NEXT:    [[VECINIT:%.*]] = insertelement <2 x i8> poison, i8 [[CALL_I]], i32 0
++; CHECK-NEXT:    [[VECINIT2:%.*]] = insertelement <2 x i8> [[VECINIT]], i8 [[CALL_I4]], i32 1
++; CHECK-NEXT:    ret <2 x i8> [[VECINIT2]]
++;
++entry:
++  %0 = extractelement <2 x i8> %x, i32 0
++  %1 = extractelement <2 x i8> %x, i32 1
++  %call.i = call i8 @llvm.ctlz.i8(i8 %0, i1 false)
++  %call.i4 = call i8 @llvm.ctlz.i8(i8 %1, i1 false)
++  %vecinit = insertelement <2 x i8> poison, i8 %call.i, i32 0
++  %vecinit2 = insertelement <2 x i8> %vecinit, i8 %call.i4, i32 1
++  ret <2 x i8> %vecinit2
++}
++
++declare i8 @llvm.ctlz.i8(i8, i1) #3
++
++attributes #0 = { alwaysinline nounwind "less-precise-fpmad"="false" "frame-pointer"="all" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
++attributes #1 = { nounwind readnone }
+diff -ruN --strip-trailing-cr a/llvm/test/Transforms/SLPVectorizer/NVPTX/non-vectorizable-intrinsic.ll b/llvm/test/Transforms/SLPVectorizer/NVPTX/non-vectorizable-intrinsic.ll
+--- a/llvm/test/Transforms/SLPVectorizer/NVPTX/non-vectorizable-intrinsic.ll
++++ b/llvm/test/Transforms/SLPVectorizer/NVPTX/non-vectorizable-intrinsic.ll
+@@ -0,0 +1,57 @@
++; NOTE: Assertions have been autogenerated by utils/update_test_checks.py
++; RUN: opt < %s -passes=slp-vectorizer -o - -S -slp-threshold=-1000 | FileCheck %s
++
++target datalayout = "e-p:32:32-i64:64-v16:16-v32:32-n16:32:64"
++target triple = "nvptx--nvidiacl"
++
++; CTLZ cannot be vectorized currently because the second argument is a scalar
++; for both the scalar and vector forms of the intrinsic. In the future it
++; should be possible to vectorize such functions.
++; Test causes an assert if LLVM tries to vectorize CTLZ.
++
++define <2 x i8> @cltz_test(<2 x i8> %x) #0 {
++; CHECK-LABEL: @cltz_test(
++; CHECK-NEXT:  entry:
++; CHECK-NEXT:    [[TMP0:%.*]] = extractelement <2 x i8> [[X:%.*]], i32 0
++; CHECK-NEXT:    [[CALL_I:%.*]] = call i8 @llvm.ctlz.i8(i8 [[TMP0]], i1 false)
++; CHECK-NEXT:    [[VECINIT:%.*]] = insertelement <2 x i8> undef, i8 [[CALL_I]], i32 0
++; CHECK-NEXT:    [[TMP1:%.*]] = extractelement <2 x i8> [[X]], i32 1
++; CHECK-NEXT:    [[CALL_I4:%.*]] = call i8 @llvm.ctlz.i8(i8 [[TMP1]], i1 false)
++; CHECK-NEXT:    [[VECINIT2:%.*]] = insertelement <2 x i8> [[VECINIT]], i8 [[CALL_I4]], i32 1
++; CHECK-NEXT:    ret <2 x i8> [[VECINIT2]]
++;
++entry:
++  %0 = extractelement <2 x i8> %x, i32 0
++  %call.i = call i8 @llvm.ctlz.i8(i8 %0, i1 false)
++  %vecinit = insertelement <2 x i8> undef, i8 %call.i, i32 0
++  %1 = extractelement <2 x i8> %x, i32 1
++  %call.i4 = call i8 @llvm.ctlz.i8(i8 %1, i1 false)
++  %vecinit2 = insertelement <2 x i8> %vecinit, i8 %call.i4, i32 1
++  ret <2 x i8> %vecinit2
++}
++
++define <2 x i8> @cltz_test2(<2 x i8> %x) #1 {
++; CHECK-LABEL: @cltz_test2(
++; CHECK-NEXT:  entry:
++; CHECK-NEXT:    [[TMP0:%.*]] = extractelement <2 x i8> [[X:%.*]], i32 0
++; CHECK-NEXT:    [[TMP1:%.*]] = extractelement <2 x i8> [[X]], i32 1
++; CHECK-NEXT:    [[CALL_I:%.*]] = call i8 @llvm.ctlz.i8(i8 [[TMP0]], i1 false)
++; CHECK-NEXT:    [[CALL_I4:%.*]] = call i8 @llvm.ctlz.i8(i8 [[TMP1]], i1 false)
++; CHECK-NEXT:    [[VECINIT:%.*]] = insertelement <2 x i8> undef, i8 [[CALL_I]], i32 0
++; CHECK-NEXT:    [[VECINIT2:%.*]] = insertelement <2 x i8> [[VECINIT]], i8 [[CALL_I4]], i32 1
++; CHECK-NEXT:    ret <2 x i8> [[VECINIT2]]
++;
++entry:
++  %0 = extractelement <2 x i8> %x, i32 0
++  %1 = extractelement <2 x i8> %x, i32 1
++  %call.i = call i8 @llvm.ctlz.i8(i8 %0, i1 false)
++  %call.i4 = call i8 @llvm.ctlz.i8(i8 %1, i1 false)
++  %vecinit = insertelement <2 x i8> undef, i8 %call.i, i32 0
++  %vecinit2 = insertelement <2 x i8> %vecinit, i8 %call.i4, i32 1
++  ret <2 x i8> %vecinit2
++}
++
++declare i8 @llvm.ctlz.i8(i8, i1) #3
++
++attributes #0 = { alwaysinline nounwind "less-precise-fpmad"="false" "frame-pointer"="all" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
++attributes #1 = { nounwind readnone }
+diff -ruN --strip-trailing-cr a/llvm/test/Transforms/SLPVectorizer/NVPTX/vectorizable-intrinsic.ll b/llvm/test/Transforms/SLPVectorizer/NVPTX/vectorizable-intrinsic.ll
+--- a/llvm/test/Transforms/SLPVectorizer/NVPTX/vectorizable-intrinsic.ll
++++ b/llvm/test/Transforms/SLPVectorizer/NVPTX/vectorizable-intrinsic.ll
+@@ -1,42 +0,0 @@
+-; RUN: opt < %s -passes=slp-vectorizer -o - -S -slp-threshold=-1000 | FileCheck %s
+-
+-target datalayout = "e-p:32:32-i64:64-v16:16-v32:32-n16:32:64"
+-target triple = "nvptx--nvidiacl"
+-
+-; Test that CTLZ can be vectorized currently even though the second argument is a scalar
+-
+-define <2 x i8> @cltz_test(<2 x i8> %x) #0 {
+-; CHECK-LABEL: @cltz_test(
+-;      CHECK: [[VEC:%.*]] = call <2 x i8> @llvm.ctlz.v2i8(<2 x i8> %{{.*}}, i1 false)
+-; CHECK-NEXT: ret <2 x i8> [[VEC]]
+-;
+-entry:
+-  %0 = extractelement <2 x i8> %x, i32 0
+-  %call.i = call i8 @llvm.ctlz.i8(i8 %0, i1 false)
+-  %vecinit = insertelement <2 x i8> undef, i8 %call.i, i32 0
+-  %1 = extractelement <2 x i8> %x, i32 1
+-  %call.i4 = call i8 @llvm.ctlz.i8(i8 %1, i1 false)
+-  %vecinit2 = insertelement <2 x i8> %vecinit, i8 %call.i4, i32 1
+-  ret <2 x i8> %vecinit2
+-}
+-
+-
+-define <2 x i8> @cltz_test_poison(<2 x i8> %x) #0 {
+-; CHECK-LABEL: @cltz_test_poison(
+-;      CHECK: [[VEC:%.*]] = call <2 x i8> @llvm.ctlz.v2i8(<2 x i8> %{{.*}}, i1 false)
+-; CHECK-NEXT: ret <2 x i8> [[VEC]]
+-;
+-entry:
+-  %0 = extractelement <2 x i8> %x, i32 0
+-  %call.i = call i8 @llvm.ctlz.i8(i8 %0, i1 false)
+-  %vecinit = insertelement <2 x i8> poison, i8 %call.i, i32 0
+-  %1 = extractelement <2 x i8> %x, i32 1
+-  %call.i4 = call i8 @llvm.ctlz.i8(i8 %1, i1 false)
+-  %vecinit2 = insertelement <2 x i8> %vecinit, i8 %call.i4, i32 1
+-  ret <2 x i8> %vecinit2
+-}
+-
+-declare i8 @llvm.ctlz.i8(i8, i1) #3
+-
+-attributes #0 = { alwaysinline nounwind "less-precise-fpmad"="false" "frame-pointer"="all" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
+-attributes #1 = { nounwind readnone }

@@ -66,6 +66,7 @@ tf_kernel_library(
         "//tensorflow/core/data:serialization_utils",
         "//tensorflow/core/framework:dataset_options_proto_cc",
         "//tensorflow/core/util/tensor_bundle",
+        "//tensorflow/core/util/tensor_bundle:naming",
     ],
 )
 
@@ -647,7 +648,7 @@ tf_kernel_library(
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/core:protos_all_cc",
-        "//third_party/eigen3",
+        "@eigen_archive//:eigen3",
     ],
 )
 

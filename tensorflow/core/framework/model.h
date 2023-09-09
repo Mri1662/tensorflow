@@ -40,13 +40,14 @@ limitations under the License.
 #include "tensorflow/core/lib/random/random.h"
 #include "tensorflow/core/platform/cpu_info.h"
 #include "tensorflow/core/platform/env.h"
+#include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/path.h"
 #include "tensorflow/core/platform/statusor.h"
 #include "tensorflow/core/platform/strcat.h"
 #include "tensorflow/core/platform/stringprintf.h"
-#include "tensorflow/tsl/platform/mutex.h"
-#include "tensorflow/tsl/platform/thread_annotations.h"
+#include "tsl/platform/mutex.h"
+#include "tsl/platform/thread_annotations.h"
 
 namespace tensorflow {
 namespace data {
@@ -149,7 +150,13 @@ std::shared_ptr<Parameter> MakeNonTunableParameter(const string& name,
 // class and move all ram budget management to the model autotuner.
 class RamBudgetManager {
  public:
-  explicit RamBudgetManager(int64_t budget) : budget_(budget) {}
+  explicit RamBudgetManager(int64_t budget) : budget_(budget) {
+    if (budget <= 0) {
+      LOG(WARNING) << "RAM budget is " << budget
+                   << " which could prevent autotuner from properly adjusting "
+                      "buffer sizes.";
+    }
+  }
 
   // Requests a new total memory allocation for the parts of the dataset
   // tuned by the model.

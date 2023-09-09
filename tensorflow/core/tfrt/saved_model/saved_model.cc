@@ -38,6 +38,7 @@ limitations under the License.
 #include "mlir/Dialect/Func/Extensions/AllExtensions.h"  // from @llvm-project
 #include "mlir/IR/DialectRegistry.h"  // from @llvm-project
 #include "mlir/IR/MLIRContext.h"  // from @llvm-project
+#include "mlir/IR/OwningOpRef.h"  // from @llvm-project
 #include "tensorflow/cc/saved_model/reader.h"
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_saved_model.h"
 #include "tensorflow/compiler/mlir/tensorflow/translate/import_model.h"
@@ -46,7 +47,7 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/tfrt/transforms/mlrt/import_model.h"
 #include "tensorflow/compiler/mlir/tfrt/translate/import_model.h"
 #include "tensorflow/compiler/mlir/tfrt/translate/tfrt_compile_options.h"
-#include "tensorflow/compiler/xla/status_macros.h"
+#include "xla/status_macros.h"
 #include "tensorflow/core/framework/function.pb.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor.pb.h"
@@ -76,11 +77,13 @@ limitations under the License.
 #include "tensorflow/core/tfrt/runtime/work_queue_interface.h"
 #include "tensorflow/core/tfrt/saved_model/saved_model_util.h"
 #include "tensorflow/core/tfrt/saved_model/utils/serialize_bef_utils.h"
+#include "tensorflow/core/tfrt/stubs/model_config_stub.h"
 #include "tensorflow/core/tfrt/utils/error_util.h"
 #include "tensorflow/core/tfrt/utils/fallback_tensor.h"
 #include "tensorflow/core/tfrt/utils/utils.h"
-#include "tensorflow/tsl/platform/errors.h"
-#include "tensorflow/tsl/platform/statusor.h"
+#include "tsl/platform/env.h"
+#include "tsl/platform/errors.h"
+#include "tsl/platform/statusor.h"
 #include "tfrt/bef/bef_buffer.h"  // from @tf_runtime
 #include "tfrt/bef_executor/bef_file.h"  // from @tf_runtime
 #include "tfrt/core_runtime/core_runtime.h"  // from @tf_runtime
@@ -389,16 +392,24 @@ void GetSignaturesFromSignatureDef(
   }
 }
 
-void GetDefaultInputValueFromSignatureDef(
-    SignatureMap& signatures,
-    const google::protobuf::Map<std::string, tensorflow::SignatureDef>& signature_defs) {
-  for (const auto& [function_name, signature_def] : signature_defs) {
-    auto itr = signatures.find(function_name);
+void GetDefaultInputValue(
+    const google::protobuf::Map<std::string, tensorflow::SignatureDef>& signature_defs,
+    ModelRuntimeContext& context, SignatureMap& signatures) {
+  bool load_from_signature_def = false;
+  for (const auto& [name, signature_def] : signature_defs) {
+    auto itr = signatures.find(name);
     if (itr == signatures.end()) {
       continue;
     }
-    signatures[function_name].default_inputs = signature_def.defaults();
+    LOG(INFO) << "Model signature identified for default inputs";
+    if (signature_def.defaults().empty()) continue;
+    LOG(INFO) << "Loading default inputs for signature: " << name
+              << " from Signature def";
+    load_from_signature_def = true;
+    signatures[name].default_inputs = signature_def.defaults();
   }
+  if (load_from_signature_def) return;
+  GetDefaultInputsFromModelConfig(context, signatures);
 }
 
 void UpdateCompileOptions(SavedModel::Options& options) {
@@ -441,6 +452,10 @@ SavedModelImpl::LoadSavedModel(Options options,
 
   // Register TFRT dialects
   mlir::DialectRegistry registry;
+  if (AotPackageExists(saved_model_dir)) {
+    LOG(INFO) << "Found AoT package. Register required dialects.";
+    RegisterTFRTDialectsForAoT(registry);
+  }
   RegisterMlirDialect(registry);
   mlir::MLIRContext context(registry);
 
@@ -475,13 +490,21 @@ SavedModelImpl::LoadSavedModel(Options options,
         fallback_state, FallbackState::Create(session_options, fdef_lib));
   }
 
-  ASSIGN_OR_RETURN_IN_IMPORT(
-      auto mlir_module,
-      ImportSavedModel(
-          &context, meta_graph_def, *fallback_state,
-          std::string(saved_model_dir),
-          /*import_user_signatures=*/!options.enable_lazy_loading,
-          options.graph_execution_options.run_placer_grappler_on_functions));
+  mlir::OwningOpRef<mlir::ModuleOp> mlir_module;
+  if (AotPackageExists(saved_model_dir)) {
+    LOG(INFO) << "Found AoT package. Load and deserialize MLIR module.";
+
+    TF_RETURN_IF_ERROR(
+        DeserializeAoTMlirModule(saved_model_dir, &context, &mlir_module));
+  } else {
+    ASSIGN_OR_RETURN_IN_IMPORT(
+        mlir_module,
+        ImportSavedModel(
+            &context, meta_graph_def, *fallback_state,
+            std::string(saved_model_dir),
+            /*import_user_signatures=*/!options.enable_lazy_loading,
+            options.graph_execution_options.run_placer_grappler_on_functions));
+  }
   // TODO(b/278143179): Upload module w/o control flow.
   SymbolUids symbol_uids;
   symbol_uids.tf_symbol_uid = MaybeUploadMlirToXsymbol(mlir_module.get());
@@ -506,10 +529,6 @@ SavedModelImpl::LoadSavedModel(Options options,
                                   meta_graph_def.signature_def(), options);
   }
 
-  GetDefaultInputValueFromSignatureDef(
-      initializers_and_signatures.signature_map,
-      meta_graph_def.signature_def());
-
   auto runner_table = std::make_unique<OpKernelRunnerTable>();
   auto resource_array = std::make_unique<tfd::FallbackResourceArray>();
 
@@ -531,10 +550,13 @@ SavedModelImpl::LoadSavedModel(Options options,
     model_context.set_meta_graph_def(nullptr);
   }
 
+  GetDefaultInputValue(meta_graph_def.signature_def(), model_context,
+                       initializers_and_signatures.signature_map);
+
   mlrt::bc::Buffer bytecode;
   tfrt::BefBuffer bef;
   if (AotPackageExists(saved_model_dir)) {
-    LOG(INFO) << "Found AoT package";
+    LOG(INFO) << "Found AoT package. Load and deserialize BEF.";
 
     ASSIGN_OR_RETURN_IN_COMPILE(
         bef, LoadAotPackages(options.graph_execution_options.compile_options,

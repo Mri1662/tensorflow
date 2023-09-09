@@ -40,6 +40,7 @@ cc_library(
         "//tensorflow/c:c_api",
         "//tensorflow/c:c_api_internal",
         "//tensorflow/c:safe_ptr",
+        "//tensorflow/c:tf_status_helper",
         "//tensorflow/c/eager:c_api",
         "//tensorflow/c/eager:c_api_experimental",
         "//tensorflow/c/eager:c_api_internal",
@@ -50,6 +51,7 @@ cc_library(
         "//tensorflow/c/eager:tfe_tensorhandle_internal",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
+        "//tensorflow/core:lib_headers_for_pybind",
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core/common_runtime/eager:tensor_handle",
         "//tensorflow/core/platform:logging",
@@ -65,15 +67,19 @@ cc_library(
         "//tensorflow/python/lib/core:safe_pyobject_ptr",
         "//tensorflow/python/util:cpp_python_util",
         "//tensorflow/python/util:stack_trace",
-        "//tensorflow/tsl/python/lib/core:numpy",
         "//third_party/py/numpy:headers",
         "//third_party/python_runtime:headers",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/hash",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",
+        "@com_google_absl//absl/types:span",
         "@com_google_absl//absl/types:variant",
+        "@local_tsl//tsl/platform:status",
+        "@local_tsl//tsl/profiler/lib:traceme",
+        "@local_tsl//tsl/python/lib/core:numpy",
         "@pybind11",
     ],
 )
@@ -118,10 +124,7 @@ filegroup(
         "pywrap_tensor_conversion.h",
         "pywrap_tfe.h",
     ],
-    visibility = [
-        "//tensorflow/core:__pkg__",
-        "//tensorflow/python:__subpackages__",
-    ],
+    visibility = ["//tensorflow/python:__subpackages__"],
 )
 
 # Transitive dependencies of this target will be included in the pip package.
@@ -284,7 +287,6 @@ cuda_py_strict_test(
     deps = [
         ":context",
         ":def_function",
-        "//tensorflow/compiler/xla/service:hlo_proto_py",
         "//tensorflow/python/framework:constant_op",
         "//tensorflow/python/framework:errors",
         "//tensorflow/python/framework:ops",
@@ -292,6 +294,7 @@ cuda_py_strict_test(
         "//tensorflow/python/ops:array_ops",
         "//tensorflow/python/platform:client_testlib",
         "@absl_py//absl/testing:parameterized",
+        "@local_xla//xla/service:hlo_proto_py",
     ],
 )
 
@@ -355,7 +358,7 @@ cuda_py_strict_test(
         "//tensorflow/python/framework:test_lib",
         "//tensorflow/python/platform:gfile",
         "//tensorflow/python/profiler:trace",
-        "//tensorflow/tsl/profiler/protobuf:trace_events_proto_py",
+        "@local_tsl//tsl/profiler/protobuf:trace_events_proto_py",
     ],
 )
 
@@ -501,7 +504,6 @@ cuda_py_strict_test(
         "//tensorflow/python/framework:tensor_shape",
         "//tensorflow/python/framework:tensor_util",
         "//tensorflow/python/framework:test_lib",
-        "//tensorflow/python/layers",
         "//tensorflow/python/ops:array_ops",
         "//tensorflow/python/ops:array_ops_stack",
         "//tensorflow/python/ops:cond",
@@ -930,7 +932,6 @@ cuda_py_strict_test(
         "//tensorflow/python/framework:tensor",
         "//tensorflow/python/framework:tensor_shape",
         "//tensorflow/python/framework:test_lib",
-        "//tensorflow/python/layers",
         "//tensorflow/python/ops:array_ops",
         "//tensorflow/python/ops:array_ops_stack",
         "//tensorflow/python/ops:control_flow_ops",
@@ -1315,7 +1316,7 @@ py_strict_library(
         "//tensorflow/python/autograph/pyct/static_analysis:reaching_fndefs",
         "//tensorflow/python/framework:op_def_registry",
         "//tensorflow/python/framework:ops",
-        "@gast_archive//:gast",
+        "@pypi_gast//:pkg",
     ],
 )
 

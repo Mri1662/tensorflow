@@ -61,7 +61,7 @@ limitations under the License.
 #include "stablehlo/dialect/ChloOps.h"  // from @stablehlo
 #include "tensorflow/compiler/mlir/lite/stablehlo/transforms/passes.h"
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_ops.h"
-#include "tensorflow/compiler/xla/mlir_hlo/mhlo/IR/hlo_ops.h"
+#include "xla/mlir_hlo/mhlo/IR/hlo_ops.h"
 #include "tensorflow/core/framework/kernel_shape_util.h"
 #include "tensorflow/core/lib/math/math_util.h"
 
@@ -180,17 +180,15 @@ struct ConvertNdConvOp {
 
     // All ones in "lhs_dilation" means this "mhlo.conv" op should be
     // converted to "tf.Conv2D" or "tf.DepthwiseConv2dNativeOp".
-    if (conv_op.getLhsDilation().has_value()) {
-      auto lhs_dilation = conv_op.getLhsDilation().value();
-      if (!lhs_dilation.isSplat() || lhs_dilation.getSplatValue<int64_t>() != 1)
-        return false;
-    }
+    auto lhs_dilation = conv_op.getLhsDilation().value();
+    if (!lhs_dilation.isSplat() || lhs_dilation.getSplatValue<int64_t>() != 1)
+      return false;
 
-    if (!conv_op.getWindowStrides().has_value() || conv_op.getWindowStrides()
-                                                           .value()
-                                                           .getType()
-                                                           .cast<ShapedType>()
-                                                           .getRank() != 1)
+    if (conv_op.getWindowStrides()
+            .value()
+            .getType()
+            .cast<ShapedType>()
+            .getRank() != 1)
       return false;
 
     auto num_spatial_dims =
@@ -202,6 +200,32 @@ struct ConvertNdConvOp {
   }
 };
 
+// Checks for attributes with no value and sets the default value according to
+// the convolution op definition.
+void setDefaultConvAttributes(mhlo::ConvolutionOp& conv_op,
+                              ConversionPatternRewriter& rewriter) {
+  auto dnums = conv_op.getDimensionNumbers();
+  int32_t input_spatial_dims =
+      static_cast<int32_t>(dnums.getInputSpatialDimensions().size());
+  if (!conv_op.getWindowStrides().has_value()) {
+    conv_op.setWindowStridesAttr(
+        rewriter.getI64TensorAttr(std::vector<int64_t>(input_spatial_dims, 1)));
+  }
+  if (!conv_op.getPadding().has_value()) {
+    conv_op.setPaddingAttr(DenseIntElementsAttr::get(
+        RankedTensorType::get({input_spatial_dims, 2}, rewriter.getI64Type()),
+        SmallVector<int64_t>(input_spatial_dims * 2, 0)));
+  }
+  if (!conv_op.getLhsDilation().has_value()) {
+    conv_op.setLhsDilationAttr(
+        rewriter.getI64TensorAttr(std::vector<int64_t>(input_spatial_dims, 1)));
+  }
+  if (!conv_op.getRhsDilation().has_value()) {
+    conv_op.setRhsDilationAttr(
+        rewriter.getI64TensorAttr(std::vector<int64_t>(input_spatial_dims, 1)));
+  }
+}
+
 // Convert a 1-D convolution into a 2-D convolution (which TF supports) so that
 // it can be rewritten by the pattern `Convert2DConvOp`.
 class Convert1DConvOp : public OpConversionPattern<mhlo::ConvolutionOp>,
@@ -212,24 +236,8 @@ class Convert1DConvOp : public OpConversionPattern<mhlo::ConvolutionOp>,
   LogicalResult matchAndRewrite(
       mhlo::ConvolutionOp conv_op, OpAdaptor adaptor,
       ConversionPatternRewriter& rewriter) const final {
-    //
+    setDefaultConvAttributes(conv_op, rewriter);
     // Check that input is a supported 1d convolution.
-    //
-
-    // stablehlo.convolution allows ops without window strides, where default
-    // value 1 will be set for each spatial dimension. However, window_strides
-    // are needed for mhlo.convolution -> tf.Conv2D conversion. Therefore, in
-    // this conversion path have a fallback to set window strides if not set.
-    if (!conv_op.getWindowStrides().has_value()) {
-      const int window_strides_size =
-          conv_op.getDimensionNumbers().getInputSpatialDimensions().size();
-      std::vector<int64_t> window_strides_2d_array_default(window_strides_size,
-                                                           1);
-      DenseIntElementsAttr window_strides_2d_default =
-          rewriter.getI64TensorAttr(window_strides_2d_array_default);
-      conv_op.setWindowStridesAttr(window_strides_2d_default);
-    }
-
     if (!IsSupportedConvOp(conv_op) || conv_op->getNumResults() != 1)
       return rewriter.notifyMatchFailure(conv_op, "unsupported conv op.");
 
@@ -320,12 +328,6 @@ class Convert1DConvOp : public OpConversionPattern<mhlo::ConvolutionOp>,
         RankedTensorType::get({2, 2}, rewriter.getI64Type()), padding_2d_array);
 
     // LHS dilation
-    // Set LHS dilation defaults if not set (1 for each input spatial dimension)
-    if (!conv_op.getLhsDilation().has_value()) {
-      conv_op.setLhsDilationAttr(rewriter.getI64TensorAttr(
-          std::vector<int64_t>(dnums.getInputSpatialDimensions().size(), 1)));
-    }
-
     SmallVector<int64_t, 4> lhs_dilation_array_2d;
     for (const auto v : conv_op.getLhsDilation().value().getValues<int64_t>()) {
       lhs_dilation_array_2d.emplace_back(v);
@@ -336,13 +338,6 @@ class Convert1DConvOp : public OpConversionPattern<mhlo::ConvolutionOp>,
         lhs_dilation_array_2d);
 
     // RHS dilation
-    // Set RHS dilation defaults if not set (1 for each kernel spatial
-    // dimension)
-    if (!conv_op.getRhsDilation().has_value()) {
-      conv_op.setRhsDilationAttr(rewriter.getI64TensorAttr(
-          std::vector<int64_t>(dnums.getKernelSpatialDimensions().size(), 1)));
-    }
-
     SmallVector<int64_t, 4> rhs_dilation_array_2d;
     for (const auto v : conv_op.getRhsDilation().value().getValues<int64_t>()) {
       rhs_dilation_array_2d.emplace_back(v);
@@ -431,6 +426,7 @@ class Convert2DConvOp : public OpConversionPattern<mhlo::ConvolutionOp>,
   LogicalResult matchAndRewrite(
       mhlo::ConvolutionOp conv_op, OpAdaptor adaptor,
       ConversionPatternRewriter& rewriter) const final {
+    setDefaultConvAttributes(conv_op, rewriter);
     if (!IsSupportedConvOp(conv_op)) {
       return failure();
     }
@@ -481,9 +477,8 @@ class Convert2DConvOp : public OpConversionPattern<mhlo::ConvolutionOp>,
     const bool is_depthwise_conv = input_channels == feature_group_count;
     std::string padding;
     SmallVector<int64_t, 8> explicit_padding;
-    if (!conv_op.getPadding().has_value() ||
-        (conv_op.getPadding().value().isSplat() &&
-         conv_op.getPadding()->getSplatValue<int64_t>() == 0)) {
+    if (conv_op.getPadding().value().isSplat() &&
+        conv_op.getPadding()->getSplatValue<int64_t>() == 0) {
       padding = "VALID";
     } else {
       SmallVector<int64_t, 4> padding_array;
@@ -748,13 +743,13 @@ class ConvertNonTrivialConvOp
   LogicalResult matchAndRewrite(
       mhlo::ConvolutionOp conv_op, OpAdaptor adaptor,
       ConversionPatternRewriter& rewriter) const final {
+    setDefaultConvAttributes(conv_op, rewriter);
     if (IsSupportedConvOp(conv_op, rewriter).failed()) {
       return rewriter.notifyMatchFailure(
           conv_op,
           "doesn't support to convert to ConvBackpropInputOp or "
           "ResizeBilinearOp");
     }
-
     // tf.ResizeBilinearOp is perferred than tf.Conv2DBackpropInputOp since
     // the former has better portability, especially in inference use cases.
     bool align_corners;
@@ -788,9 +783,8 @@ class ConvertNonTrivialConvOp
 
     mhlo::ConvDimensionNumbersAttr dnums = conv_op.getDimensionNumbers();
     std::string padding;
-    if (!conv_op.getPadding().has_value() ||
-        (conv_op.getPadding().value().isSplat() &&
-         conv_op.getPadding()->getSplatValue<int64_t>() == 0)) {
+    if (conv_op.getPadding().value().isSplat() &&
+        conv_op.getPadding()->getSplatValue<int64_t>() == 0) {
       padding = "VALID";
     } else {
       auto spatial_dims = dnums.getInputSpatialDimensions();
@@ -866,21 +860,16 @@ class ConvertNonTrivialConvOp
                                          "doesn't support group convolution");
     }
 
-    // Checks lhs_dilation is non-trivial.
-    if (!conv_op.getLhsDilation().has_value()) {
-      return rewriter.notifyMatchFailure(conv_op,
-                                         "requires lhs_dilation attribute");
-    }
     auto lhs_dilation = conv_op.getLhsDilation().value();
     if (lhs_dilation.isSplat() && lhs_dilation.getSplatValue<int64_t>() == 1)
       return rewriter.notifyMatchFailure(conv_op,
                                          "requires non-trivial lhs_dilation");
 
-    if (!conv_op.getWindowStrides().has_value() || conv_op.getWindowStrides()
-                                                           .value()
-                                                           .getType()
-                                                           .cast<ShapedType>()
-                                                           .getRank() != 1)
+    if (conv_op.getWindowStrides()
+            .value()
+            .getType()
+            .cast<ShapedType>()
+            .getRank() != 1)
       return rewriter.notifyMatchFailure(
           conv_op, "requires window_strides to equal to one");
 
@@ -920,7 +909,7 @@ class ConvertNonTrivialConvOp
     if (dnums.getKernelInputFeatureDimension() != num_spatial_dims + 1 ||
         dnums.getKernelOutputFeatureDimension() != num_spatial_dims)
       return rewriter.notifyMatchFailure(conv_op,
-                                         "requires kernel format [b, 0, 1, f]");
+                                         "requires kernel format [0, 1, o, i]");
     auto kernel_spatial_dimensions = dnums.getKernelSpatialDimensions();
     for (auto p : llvm::enumerate(kernel_spatial_dimensions)) {
       if (p.value() != p.index())
@@ -966,14 +955,6 @@ class ConvertNonTrivialConvOp
         input_spatial_dimensions[1] != output_spatial_dimensions[1])
       return rewriter.notifyMatchFailure(
           conv_op, "can only be converted to 2D resize op");
-
-    // When "lhs_dilation" is 2D and contains at least "1", and "rhs_dilation"
-    // are all "1"s, this "mhlo.conv" op can potentially be converted to
-    // "tf.ResizeBilinearOp".
-    if (!conv_op.getRhsDilation().has_value() ||
-        !conv_op.getPadding().has_value())
-      return rewriter.notifyMatchFailure(
-          conv_op, "resize op requires rhs_dilation and padding");
 
     auto lhs_dilation = conv_op.getLhsDilation().value();
     auto rhs_dilation = conv_op.getRhsDilation().value();
@@ -2084,6 +2065,31 @@ class ConvertReduceOpToTfOp : public OpConversionPattern<mhlo::ReduceOp> {
   }
 };
 
+class ConvertReduceOpToTfProd
+    : public ConvertReduceOpToTfOp<mhlo::MulOp, TF::ProdOp, TF::MulOp> {
+ public:
+  using ConvertReduceOpToTfOp::ConvertReduceOpToTfOp;
+
+  LogicalResult MatchInitValue(Value init_value) const override {
+    auto type = init_value.getType().cast<ShapedType>().getElementType();
+    if (type.isa<FloatType>()) {
+      float const_value;
+      if (failed(GetConstantSplatValue<float>(init_value, const_value)) ||
+          const_value != 1.0)
+        return failure();
+    } else if (type.isa<IntegerType>() && type.isSignlessInteger()) {
+      int32_t const_value;
+      if (failed(GetConstantSplatValue<int32_t>(init_value, const_value)) ||
+          const_value != 1)
+        return failure();
+    } else {
+      return failure();
+    }
+
+    return success();
+  }
+};
+
 class ConvertReduceOpToTfSum
     : public ConvertReduceOpToTfOp<mhlo::AddOp, TF::SumOp, TF::AddOp> {
  public:
@@ -2445,17 +2451,17 @@ class ConvertIotaOpToTfRange : public OpConversionPattern<mhlo::IotaOp> {
   }
 };
 
-// A helper function for ConvertMaxPoolOp and ConvertAvgMaxPoolOp. Returns true
+// A helper function for ConvertMaxPoolOp and ConvertAvgPoolOp. Returns true
 // if the given ReduceWindowOp is a spatial pooling without dilation. If returns
 // true, also outputs the window strides and the TF padding mode ("VALID" or
 // "SAME").
 bool IsSpatialPoolingWithoutDilation(
     mhlo::ReduceWindowOp rw, llvm::SmallVectorImpl<int64_t>* window_strides,
-    std::string* padding_mode) {
+    std::string* padding_mode, std::string* data_format) {
   // tf.max_pool or tf.avg_pool need at least 3 dimensions (batch, spatial,
   // channel).
   const uint64_t rank = rw.getWindowDimensions().size();
-  if (rank <= 2) return false;
+  if (rank <= 3 || rank > 5) return false;
 
   if (rw.getWindowStrides().has_value()) {
     window_strides->insert(window_strides->end(),
@@ -2474,17 +2480,27 @@ bool IsSpatialPoolingWithoutDilation(
     padding.resize(2 * rank, 0);
   }
 
-  // Check that we don't do any reduction along the batch (first) and channel
-  // (last) dimensions.
-  const uint64_t batch_dim = 0;
-  const uint64_t channel_dim = rank - 1;
-  if (rw.getWindowDimensions().getValues<int64_t>()[batch_dim] != 1 ||
-      rw.getWindowDimensions().getValues<int64_t>()[channel_dim] != 1 ||
-      (*window_strides)[batch_dim] != 1 ||
-      (*window_strides)[channel_dim] != 1 || padding[2 * batch_dim] != 0 ||
-      padding[2 * batch_dim + 1] != 0 || padding[2 * channel_dim] != 0 ||
-      padding[2 * channel_dim + 1] != 0)
+  // Check that we don't do any reduction along the batch and channel
+  // dimensions.
+  auto verify_batch_channel_dims = [&rw, &window_strides, &padding](
+                                       uint64_t batch_dim,
+                                       uint64_t channel_dim) {
+    return rw.getWindowDimensions().getValues<int64_t>()[batch_dim] == 1 &&
+           rw.getWindowDimensions().getValues<int64_t>()[channel_dim] == 1 &&
+           (*window_strides)[batch_dim] == 1 &&
+           (*window_strides)[channel_dim] == 1 && padding[2 * batch_dim] == 0 &&
+           padding[2 * batch_dim + 1] == 0 && padding[2 * channel_dim] == 0 &&
+           padding[2 * channel_dim + 1] == 0;
+  };
+
+  bool is_pool2d = rank == 4;
+  if (verify_batch_channel_dims(0, rank - 1)) {
+    *data_format = is_pool2d ? "NHWC" : "NDHWC";
+  } else if (verify_batch_channel_dims(0, 1)) {
+    *data_format = is_pool2d ? "NCHW" : "NCDHW";
+  } else {
     return false;
+  }
 
   if (rw.getWindowDilations().has_value() &&
       !(rw.getWindowDilations()->isSplat() &&
@@ -2698,8 +2714,9 @@ class ConvertAvgPoolOp : public OpConversionPattern<mhlo::DivOp> {
     if (!isFloatZero(rw.getInitValues()[0])) return failure();
 
     llvm::SmallVector<int64_t, 5> window_strides;
-    std::string padding_mode;
-    if (!IsSpatialPoolingWithoutDilation(rw, &window_strides, &padding_mode)) {
+    std::string padding_mode, data_format;
+    if (!IsSpatialPoolingWithoutDilation(rw, &window_strides, &padding_mode,
+                                         &data_format)) {
       return rewriter.notifyMatchFailure(
           div_op, "not the root of spatial pooling without dilation");
     }
@@ -2723,7 +2740,7 @@ class ConvertAvgPoolOp : public OpConversionPattern<mhlo::DivOp> {
       return replaceWithAvgPool(
           div_op, rw.getInputs()[0],
           llvm::to_vector<4>(rw.getWindowDimensions().getValues<int64_t>()),
-          window_strides, "VALID", rewriter);
+          window_strides, "VALID", data_format, rewriter);
     }
 
     Value actual_divisor = recursivelyWalkUpDivisor(div_op.getRhs());
@@ -2754,7 +2771,7 @@ class ConvertAvgPoolOp : public OpConversionPattern<mhlo::DivOp> {
       return replaceWithAvgPool(
           div_op, rw.getInputs()[0],
           llvm::to_vector<4>(rw.getWindowDimensions().getValues<int64_t>()),
-          window_strides, padding_mode, rewriter);
+          window_strides, padding_mode, data_format, rewriter);
     }
 
     return failure();
@@ -2772,18 +2789,19 @@ class ConvertAvgPoolOp : public OpConversionPattern<mhlo::DivOp> {
                                    llvm::ArrayRef<int64_t> ksizes,
                                    llvm::ArrayRef<int64_t> kstrides,
                                    llvm::StringRef padding,
+                                   llvm::StringRef data_format,
                                    ConversionPatternRewriter& rewriter) const {
     if (ksizes.size() == 4) {
       rewriter.replaceOpWithNewOp<TF::AvgPoolOp>(
           op, op.getType(), input, rewriter.getI64ArrayAttr(ksizes),
           rewriter.getI64ArrayAttr(kstrides), rewriter.getStringAttr(padding),
-          rewriter.getStringAttr("NHWC"));
+          rewriter.getStringAttr(data_format));
       return success();
     } else if (ksizes.size() == 5) {
       rewriter.replaceOpWithNewOp<TF::AvgPool3DOp>(
           op, op.getType(), input, rewriter.getI64ArrayAttr(ksizes),
           rewriter.getI64ArrayAttr(kstrides), rewriter.getStringAttr(padding),
-          rewriter.getStringAttr("NDHWC"));
+          rewriter.getStringAttr(data_format));
       return success();
     }
     return failure();
@@ -2825,8 +2843,9 @@ class ConvertMaxPoolOp : public OpConversionPattern<mhlo::ReduceWindowOp> {
     }
 
     llvm::SmallVector<int64_t, 5> window_strides;
-    std::string padding_mode;
-    if (!IsSpatialPoolingWithoutDilation(rw, &window_strides, &padding_mode)) {
+    std::string padding_mode, data_format;
+    if (!IsSpatialPoolingWithoutDilation(rw, &window_strides, &padding_mode,
+                                         &data_format)) {
       return rewriter.notifyMatchFailure(
           rw, "not the root of spatial pooling without dilation");
     }
@@ -2834,7 +2853,7 @@ class ConvertMaxPoolOp : public OpConversionPattern<mhlo::ReduceWindowOp> {
     return replaceWithMaxPool(
         rw, rw.getInputs()[0],
         llvm::to_vector<4>(rw.getWindowDimensions().getValues<int64_t>()),
-        window_strides, padding_mode, rewriter);
+        window_strides, padding_mode, data_format, rewriter);
   }
 
  private:
@@ -2863,19 +2882,20 @@ class ConvertMaxPoolOp : public OpConversionPattern<mhlo::ReduceWindowOp> {
                                    llvm::ArrayRef<int64_t> ksizes,
                                    llvm::ArrayRef<int64_t> kstrides,
                                    llvm::StringRef padding,
+                                   llvm::StringRef data_format,
                                    ConversionPatternRewriter& rewriter) const {
     if (ksizes.size() == 4) {
       rewriter.replaceOpWithNewOp<TF::MaxPoolOp>(
           op, op.getType(0), input, rewriter.getI64ArrayAttr(ksizes),
           rewriter.getI64ArrayAttr(kstrides), rewriter.getStringAttr(padding),
           /*explicit_paddings=*/rewriter.getI64ArrayAttr({}),
-          rewriter.getStringAttr("NHWC"));
+          rewriter.getStringAttr(data_format));
       return success();
     } else if (ksizes.size() == 5) {
       rewriter.replaceOpWithNewOp<TF::MaxPool3DOp>(
           op, op.getType(0), input, rewriter.getI64ArrayAttr(ksizes),
           rewriter.getI64ArrayAttr(kstrides), rewriter.getStringAttr(padding),
-          rewriter.getStringAttr("NDHWC"));
+          rewriter.getStringAttr(data_format));
       return success();
     }
     return failure();
@@ -4120,19 +4140,19 @@ void LegalizeHloToTf::runOnOperation() {
 
 void PopulateLegalizeHloToTfPatterns(RewritePatternSet* patterns,
                                      MLIRContext* context) {
-  patterns
-      ->add<ConvertAvgPoolOp, Convert2DConvOp, Convert1DConvOp,
-            ConvertNonTrivialConvOp, ConvertDynamicSliceOp,
-            ConvertDynamicUpdateSliceOp, ConvertGatherOp, ConvertIfOp,
-            ConvertMaxPoolOp, ConvertPopulationCountOp, ConvertScatterAddOp,
-            ConvertScatterMaxOp, ConvertScatterMinOp, ConvertScatterSubOp,
-            ConvertScatterUpdateOp, ConvertSliceOp, ConvertReduceOpToTfArgmax,
-            ConvertReduceOpToTfArgmin, ConvertReduceOpToTfMax,
-            ConvertReduceOpToTfMin, ConvertReduceOpToTfAll,
-            ConvertReduceOpToTfAny, ConvertReduceOpToTfSum, ConvertSortToTfTopk,
-            ConvertIotaOpToTfRange, ConvertWhileOp, ConvertLoweredCumSumOp,
-            ConvertLoweredCumProdOp, ConvertGetDimensionSizeOp,
-            ConvertDynamicIotaOp, ConvertRealDynamicSliceOp>(context);
+  patterns->add<
+      ConvertAvgPoolOp, Convert2DConvOp, Convert1DConvOp,
+      ConvertNonTrivialConvOp, ConvertDynamicSliceOp,
+      ConvertDynamicUpdateSliceOp, ConvertGatherOp, ConvertIfOp,
+      ConvertMaxPoolOp, ConvertPopulationCountOp, ConvertScatterAddOp,
+      ConvertScatterMaxOp, ConvertScatterMinOp, ConvertScatterSubOp,
+      ConvertScatterUpdateOp, ConvertSliceOp, ConvertReduceOpToTfArgmax,
+      ConvertReduceOpToTfArgmin, ConvertReduceOpToTfMax, ConvertReduceOpToTfMin,
+      ConvertReduceOpToTfAll, ConvertReduceOpToTfProd, ConvertReduceOpToTfAny,
+      ConvertReduceOpToTfSum, ConvertSortToTfTopk, ConvertIotaOpToTfRange,
+      ConvertWhileOp, ConvertLoweredCumSumOp, ConvertLoweredCumProdOp,
+      ConvertGetDimensionSizeOp, ConvertDynamicIotaOp,
+      ConvertRealDynamicSliceOp>(context);
   populateWithGenerated(*patterns);
 }
 
