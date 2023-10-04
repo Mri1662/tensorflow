@@ -77,6 +77,7 @@ limitations under the License.
 #include "tsl/framework/allocator.h"
 #include "tsl/platform/casts.h"
 #include "tsl/platform/errors.h"
+#include "tsl/platform/fingerprint.h"
 #include "tsl/platform/status.h"
 #include "tsl/platform/statusor.h"
 
@@ -111,7 +112,9 @@ PjRtCApiClient::PjRtCApiClient(
       //   TFRT TPU v2
       //   Built on Mar 4 2021 15:25:57 (1614900357) cl/360760169
       platform_version_(absl::StrCat(
-          "PJRT C API\n", ::pjrt::GetPlatformVersion(c_client, c_api))) {
+          "PJRT C API\n", ::pjrt::GetPlatformVersion(c_client, c_api))),
+      platform_name_(::pjrt::GetPlatformName(c_client, c_api)),
+      platform_id_(tsl::Fingerprint64(platform_name_)) {
   InitDevicesAndMemorySpaces();
   LOG(INFO) << "PjRtCApiClient created.";
 }
@@ -248,17 +251,6 @@ absl::Span<PjRtDevice* const> PjRtCApiClient::addressable_devices() const {
   return addressable_devices_;
 }
 
-absl::string_view PjRtCApiClient::platform_name() const {
-  PJRT_Client_PlatformName_Args args;
-  args.client = c_client_.get();
-  args.struct_size = PJRT_Client_PlatformName_Args_STRUCT_SIZE;
-  args.priv = nullptr;
-  pjrt::LogFatalIfPjrtError(c_api_->PJRT_Client_PlatformName(&args), c_api_);
-
-  absl::string_view platform_name(args.platform_name, args.platform_name_size);
-  return platform_name;
-}
-
 int PjRtCApiClient::process_index() const {
   PJRT_Client_ProcessIndex_Args process_index_args;
   process_index_args.struct_size = PJRT_Client_ProcessIndex_Args_STRUCT_SIZE;
@@ -325,6 +317,10 @@ StatusOr<std::optional<std::string>> PjRtCApiClient::ExecutableFingerprint(
   if (error) {
     xla::Status s = ::pjrt::PjrtErrorToStatus(error.get(), c_api_);
     return s;
+  }
+  if (args.executable_fingerprint == nullptr ||
+      args.executable_fingerprint_size == 0) {
+    return {std::nullopt};
   }
   std::string fingerprint = std::string(args.executable_fingerprint,
                                         args.executable_fingerprint_size);
@@ -585,6 +581,57 @@ StatusOr<std::unique_ptr<PjRtBuffer>> PjRtCApiClient::BufferFromHostBuffer(
   return BufferFromHostBufferInternalImpl(
       data, type, dims, byte_strides, host_buffer_semantics,
       on_done_with_host_buffer, device, /*device_layout=*/nullptr);
+}
+
+StatusOr<std::unique_ptr<PjRtBuffer>> PjRtCApiClient::CreateViewOfDeviceBuffer(
+    void* device_ptr, const Shape& shape, PjRtDevice* device,
+    std::function<void()> on_delete_callback,
+    std::optional<std::intptr_t> stream) {
+  PJRT_Client_CreateViewOfDeviceBuffer_Args args;
+  args.struct_size = PJRT_Client_CreateViewOfDeviceBuffer_Args_STRUCT_SIZE;
+  args.priv = nullptr;
+  args.client = c_client_.get();
+  args.device_buffer_ptr = device_ptr;
+  args.dims = shape.dimensions().data();
+  args.num_dims = shape.dimensions().size();
+  args.element_type = pjrt::ConvertToPjRtBufferType(shape.element_type());
+  pjrt::BufferMemoryLayoutData c_layout_data;
+  if (shape.has_layout()) {
+    TF_ASSIGN_OR_RETURN(c_layout_data,
+                        pjrt::ConvertToBufferMemoryLayoutData(shape.layout()));
+    args.layout = &(c_layout_data.c_layout);
+  } else {
+    args.layout = nullptr;
+  }
+  if (on_delete_callback != nullptr) {
+    args.on_delete_callback_arg =
+        new std::function(std::move(on_delete_callback));
+    args.on_delete_callback = [](void* device_buffer_ptr, void* user_arg) {
+      auto* c_func = reinterpret_cast<std::function<void()>*>(user_arg);
+      (*c_func)();
+      delete c_func;
+    };
+  } else {
+    args.on_delete_callback = nullptr;
+    args.on_delete_callback_arg = nullptr;
+  }
+  args.device = tensorflow::down_cast<PjRtCApiDevice*>(device)->c_device();
+  if (stream.has_value()) {
+    args.stream = *stream;
+  } else {
+    args.stream = reinterpret_cast<intptr_t>(nullptr);
+  }
+  const PJRT_Api* c_api = pjrt_c_api();
+  // TODO(jieying): To be removed after 12/29/2023.
+  if (c_api->pjrt_api_version.minor_version < 33) {
+    return Unimplemented(
+        "The plugin does not support CreateViewOfDeviceBuffer");
+  }
+  RETURN_STATUS_IF_PJRT_ERROR(
+      c_api->PJRT_Client_CreateViewOfDeviceBuffer(&args), c_api);
+
+  return std::unique_ptr<PjRtBuffer>(
+      std::make_unique<PjRtCApiBuffer>(this, args.buffer));
 }
 
 const PJRT_Api* PjRtCApiClient::pjrt_c_api() const { return c_api_; }
@@ -1544,7 +1591,7 @@ PjRtCApiLoadedExecutable::ExecuteWithSingleDevice(
       pjrt_c_api()->PJRT_LoadedExecutable_Execute(&args), pjrt_c_api());
 
   if (fill_future) {
-    *returned_future = pjrt::ConvertCEventToCppFuture(
+    returned_future = pjrt::ConvertCEventToCppFuture(
         args.device_complete_events[0], pjrt_c_api());
   }
   return std::move(Convert2DCBuffersToCppBuffers(
@@ -1656,6 +1703,34 @@ bool PjRtCApiBuffer::has_dynamic_dimensions() const {
     return false;
   }
   return args.num_dynamic_dims > 0;
+}
+
+absl::Span<const bool> PjRtCApiBuffer::is_dynamic_dimension() const {
+  {
+    absl::MutexLock lock(&mu_);
+    if (!is_dynamic_dimension_.has_value()) {
+      absl::InlinedVector<bool, InlineRank()>& is_dynamic_dimension_value =
+          is_dynamic_dimension_.emplace();
+      is_dynamic_dimension_value.assign(dimensions().size(), false);
+
+      PJRT_Buffer_DynamicDimensionIndices_Args args;
+      args.struct_size = PJRT_Buffer_DynamicDimensionIndices_Args_STRUCT_SIZE;
+      args.priv = nullptr;
+      args.buffer = buffer_.get();
+      const PJRT_Api* api = pjrt_c_api();
+      std::unique_ptr<PJRT_Error, pjrt::PJRT_ErrorDeleter> error(
+          api->PJRT_Buffer_DynamicDimensionIndices(&args),
+          pjrt::MakeErrorDeleter(api));
+      if (error && pjrt::GetErrorCode(error.get(), api) ==
+                       PJRT_Error_Code_UNIMPLEMENTED) {
+        return *is_dynamic_dimension_;
+      }
+      for (int i = 0; i < args.num_dynamic_dims; ++i) {
+        is_dynamic_dimension_value[args.dynamic_dim_indices[i]] = true;
+      }
+    }
+  }
+  return *is_dynamic_dimension_;
 }
 
 StatusOr<std::vector<int64_t>> PjRtCApiBuffer::logical_dimensions() {
@@ -1797,6 +1872,44 @@ StatusOr<std::unique_ptr<PjRtBuffer>> PjRtCApiBuffer::CopyToDevice(
         literal_pointer->shape().dimensions(), byte_strides,
         PjRtClient::HostBufferSemantics::kZeroCopy,
         [literal{std::move(literal)}]() { /* frees literal */ }, dst_device);
+  }
+}
+
+StatusOr<std::unique_ptr<PjRtBuffer>> PjRtCApiBuffer::CopyToMemorySpace(
+    PjRtMemorySpace* dst_memory) {
+  const PJRT_Api* api = pjrt_c_api();
+  // TODO(yueshengys): Remove this after 12/20/2023.
+  if (api->pjrt_api_version.minor_version < 32) {
+    return Unimplemented(
+        "The plugin has PJRT API version 0.32 which does not support "
+        "CopyToMemorySpace");
+  }
+  if (dst_memory->client() == client_) {
+    PJRT_Buffer_CopyToMemory_Args args;
+    args.struct_size = PJRT_Buffer_CopyToMemory_Args_STRUCT_SIZE;
+    args.priv = nullptr;
+    args.buffer = buffer_.get();
+    args.dst_memory =
+        tensorflow::down_cast<PjRtCApiMemorySpace*>(dst_memory)->c_memory();
+    RETURN_STATUS_IF_PJRT_ERROR(api->PJRT_Buffer_CopyToMemory(&args), api);
+    return std::unique_ptr<PjRtBuffer>(
+        std::make_unique<PjRtCApiBuffer>(client_, args.dst_buffer));
+  } else {
+    // Copy across PjRtClients by copying through host
+    TF_ASSIGN_OR_RETURN(std::shared_ptr<Literal> literal, ToLiteralSync());
+    absl::InlinedVector<int64_t, 4> byte_strides(
+        literal->shape().dimensions_size());
+    TF_RETURN_IF_ERROR(
+        ShapeUtil::ByteStrides(literal->shape(), absl::MakeSpan(byte_strides)));
+    // Avoid use-after-free on `literal` due to unsequenced move and use.
+    Literal* literal_pointer = literal.get();
+    return dst_memory->client()->BufferFromHostBuffer(
+        literal_pointer->untyped_data(),
+        literal_pointer->shape().element_type(),
+        literal_pointer->shape().dimensions(), byte_strides,
+        PjRtClient::HostBufferSemantics::kZeroCopy,
+        [literal{std::move(literal)}]() { /* frees literal */ }, dst_memory,
+        /*device_layout=*/nullptr);
   }
 }
 
@@ -2054,8 +2167,10 @@ StatusOr<std::unique_ptr<PjRtClient>> GetCApiClient(
   PJRT_Client_Create_Args init_args;
   init_args.struct_size = PJRT_Client_Create_Args_STRUCT_SIZE;
   init_args.priv = nullptr;
-  TF_ASSIGN_OR_RETURN(std::vector<PJRT_NamedValue> c_options,
-                      pjrt::ConvertToPjRtNamedValueList(create_options));
+  TF_ASSIGN_OR_RETURN(
+      std::vector<PJRT_NamedValue> c_options,
+      pjrt::ConvertToPjRtNamedValueList(create_options,
+                                        c_api->pjrt_api_version.minor_version));
   init_args.create_options = c_options.data();
   init_args.num_options = c_options.size();
 
@@ -2093,8 +2208,10 @@ StatusOr<std::unique_ptr<PjRtTopologyDescription>> GetCApiTopology(
   PJRT_TopologyDescription_Create_Args init_args;
   init_args.struct_size = PJRT_TopologyDescription_Create_Args_STRUCT_SIZE;
   init_args.priv = nullptr;
-  TF_ASSIGN_OR_RETURN(std::vector<PJRT_NamedValue> c_options,
-                      pjrt::ConvertToPjRtNamedValueList(create_options));
+  TF_ASSIGN_OR_RETURN(
+      std::vector<PJRT_NamedValue> c_options,
+      pjrt::ConvertToPjRtNamedValueList(create_options,
+                                        c_api->pjrt_api_version.minor_version));
   init_args.create_options = c_options.data();
   init_args.num_options = c_options.size();
   init_args.topology_name = topology_name.data();

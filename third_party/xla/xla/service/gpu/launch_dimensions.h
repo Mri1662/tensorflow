@@ -19,8 +19,8 @@ limitations under the License.
 #include <ostream>
 #include <string>
 
-#include "xla/service/gpu/gpu_device_info.h"
 #include "xla/shape.h"
+#include "xla/stream_executor/device_description.h"
 
 namespace xla {
 namespace gpu {
@@ -70,23 +70,16 @@ class LaunchDimensions {
   }
 
   std::string ToString() const {
-    return absl::StrCat(
-        "blocks: {", block_counts_.x, ", ", block_counts_.y, ", ",
-        block_counts_.z, "}, threads/block: {", thread_counts_per_block_.x,
-        ", ", thread_counts_per_block_.y, ", ", thread_counts_per_block_.z,
-        "}, shared memory [B]: ", shared_mem_bytes_);
+    return absl::StrCat("blocks: {", block_counts_.x, ", ", block_counts_.y,
+                        ", ", block_counts_.z, "}, threads/block: {",
+                        thread_counts_per_block_.x, ", ",
+                        thread_counts_per_block_.y, ", ",
+                        thread_counts_per_block_.z, "}");
   }
-
-  void SetSharedMemBytes(uint32_t shared_mem_bytes) {
-    shared_mem_bytes_ = shared_mem_bytes;
-  }
-
-  uint32_t SharedMemBytes() const { return shared_mem_bytes_; }
 
   bool operator==(const LaunchDimensions& other) const {
     return block_counts_ == other.block_counts_ &&
-           thread_counts_per_block_ == other.thread_counts_per_block_ &&
-           shared_mem_bytes_ == other.shared_mem_bytes_;
+           thread_counts_per_block_ == other.thread_counts_per_block_;
   }
 
   bool operator!=(const LaunchDimensions& other) const {
@@ -96,9 +89,6 @@ class LaunchDimensions {
  private:
   Dim3D block_counts_;
   Dim3D thread_counts_per_block_;
-
-  // Dynamic shared memory size.
-  uint32_t shared_mem_bytes_ = 0;
 };
 
 std::ostream& operator<<(std::ostream& out,
@@ -129,13 +119,13 @@ struct LaunchDimensionsConfig {
 
 // Returns -1 if the shape doesn't allow the row vectorization code path.
 // If supported, return the number of threads to use in that case.
-int64_t ThreadsPerBlockRowVectorized(const Shape& shape,
-                                     const GpuDeviceInfo& gpu_device_info,
-                                     LaunchDimensionsConfig dim_config);
+int64_t ThreadsPerBlockRowVectorized(
+    const Shape& shape, const se::DeviceDescription& gpu_device_info,
+    LaunchDimensionsConfig dim_config);
 
 // Calculates the launch dimensions used to invoke `hlo`.
 StatusOr<LaunchDimensions> CalculateLaunchDimensions(
-    const Shape& shape, const GpuDeviceInfo& gpu_device_info,
+    const Shape& shape, const se::DeviceDescription& gpu_device_info,
     LaunchDimensionsConfig dim_config = {});
 
 }  // namespace gpu

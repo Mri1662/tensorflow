@@ -461,6 +461,8 @@ class TFL_Op<string mnemonic, list<Trait> traits = []> :
 
   // Whether the TFLite operator has options in the schema representation.
   bit hasOptions = 0b0;
+  // Whether the TFLite operator has options2 in the schema representation.
+  bit hasOptions2 = 0b0;
 
   // Use to specify a custom options type for TFLite operators where
   // the option's name does not match the TFLite operator's name.
@@ -514,6 +516,25 @@ an output element, this operation computes \\(y = |x|\\).
   let results = (outs TFL_TensorOf<[I16, I32, F32, QI8, QI16]>:$y);
 
   let hasFolder = 1;
+}
+
+def TFL_DilateOp : TFL_Op<"dilate", [
+    PredOpTrait<"output and input must have same element type",
+      TFL_TCresVTEtIsSameAsOp<0, 0>>,
+    PredOpTrait<"output and padding value must have same element type",
+      TCresVTEtIsSameAsOpBase<0, 2>>,
+    Pure]> {
+  let summary = "Dilation operator";
+
+  let description = "Extends a tensor by adding new elements between the existing ones.";
+
+  let arguments = (ins
+     TFL_TensorOf<[I8, I16, I32, I64, UI8, UI16, UI32, UI64, F32, F64]>:$input,
+     TFL_TensorOf<[I32]>:$dilations,
+     TFL_0DTensorOf<[I8, I16, I32, I64, UI8, UI16, UI32, UI64, F32, F64]>:$padding_value
+  );
+
+  let results = (outs TFL_TensorOf<[I8, I16, I32, I64, UI8, UI16, UI32, UI64, F32, F64]>:$output);
 }
 
 def TFL_AddOp : TFL_Op<"add", [

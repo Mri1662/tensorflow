@@ -672,6 +672,11 @@ class PjRtStreamExecutorBuffer : public PjRtBuffer {
   StatusOr<std::unique_ptr<PjRtBuffer>> CopyToDevice(
       PjRtDevice* dst_device) override;
 
+  StatusOr<std::unique_ptr<PjRtBuffer>> CopyToMemorySpace(
+      PjRtMemorySpace* dst_memory_space) override {
+    return Unimplemented("Implement CopyToMemorySpace");
+  }
+
   void CopyToRemoteDevice(
       PjRtFuture<StatusOr<std::string>> serialized_descriptor,
       RemoteSendCallback on_done) override;
@@ -701,6 +706,9 @@ class PjRtStreamExecutorBuffer : public PjRtBuffer {
   // accesses via the buffer returned from Release.
   StatusOr<std::shared_ptr<TrackedDeviceBuffer>> Release(
       bool wait_for_operations_to_complete);
+
+  absl::StatusOr<std::unique_ptr<PjRtBuffer>> DonateWithControlDependency(
+      PjRtFuture<absl::Status> dependency) override;
 
  private:
   friend class PjRtClient;
@@ -763,9 +771,9 @@ class PjRtStreamExecutorBuffer : public PjRtBuffer {
 
 // Wraps one or more XLA LocalExecutables (one per partition, as specified by
 // the build options).
-class PjRtStreamExecutorExecutable : public PjRtLoadedExecutable {
+class PjRtStreamExecutorLoadedExecutable : public PjRtLoadedExecutable {
  public:
-  PjRtStreamExecutorExecutable(
+  PjRtStreamExecutorLoadedExecutable(
       std::vector<std::unique_ptr<LocalExecutable>> executables,
       bool parameter_is_tupled_arguments,
       std::shared_ptr<DeviceAssignment> device_assignment,
@@ -774,7 +782,7 @@ class PjRtStreamExecutorExecutable : public PjRtLoadedExecutable {
       std::vector<PjRtDevice*> addressable_devices,
       PjRtStreamExecutorClient* client);
 
-  ~PjRtStreamExecutorExecutable() override = default;
+  ~PjRtStreamExecutorLoadedExecutable() override = default;
 
   PjRtStreamExecutorClient* client() const override { return client_; }
 
@@ -875,6 +883,7 @@ class PjRtStreamExecutorExecutable : public PjRtLoadedExecutable {
   friend class PjRtStreamExecutorClient;
   friend class PjRtTpuClient;
   friend class InternalPjRtTpuClient;
+  friend class StreamExecutorGpuClient;
   // Initializes information about which arguments to which executables must be
   // donated due to aliases that were specified by the computation.
   Status SetUpDonation(bool tuple_inputs);

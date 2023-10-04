@@ -839,16 +839,15 @@ std::vector<std::pair<int64_t, const HloValue*>> TopKPeakBuffers(
   return topk_descending;
 }
 
-std::string BufferAssignment::ToVerboseString() const {
-  // TODO(loreno): make this tunable via flag.
-  const size_t kMaxBuffersToShow = 15;
+std::string BufferAssignment::ToVerboseString(
+    size_t max_buffers_to_show) const {
   std::string output =
       absl::StrCat("BufferAssignment OOM Debugging.\n", stats_.ToString());
 
   std::vector<std::pair<int64_t, const HloValue*>> peak_buffers =
-      TopKPeakBuffers(kMaxBuffersToShow, allocations_);
+      TopKPeakBuffers(max_buffers_to_show, allocations_);
   std::vector<std::string> buf_strs;
-  for (size_t i = 0; i < std::min(kMaxBuffersToShow, peak_buffers.size());
+  for (size_t i = 0; i < std::min(max_buffers_to_show, peak_buffers.size());
        ++i) {
     const HloValue* value = peak_buffers[i].second;
     const HloInstruction* instr = value->instruction();
@@ -1465,7 +1464,7 @@ Status BufferAssigner::AssignBuffersForComputations(
     }
   }
 
-  absl::c_stable_sort(
+  absl::c_sort(
       sorted_buffers, [&post_order_position, &alias_analysis, assignment](
                           const HloBuffer* a, const HloBuffer* b) {
         // Primary sort is by decreasing buffer size.
@@ -1487,7 +1486,16 @@ Status BufferAssigner::AssignBuffersForComputations(
         };
         const HloValue* a_min = *absl::c_min_element(a->values(), compare);
         const HloValue* b_min = *absl::c_min_element(b->values(), compare);
-        return compare(a_min, b_min);
+        if (post_order_position.at(a_min->instruction()) <
+            post_order_position.at(b_min->instruction())) {
+          return true;
+        } else if (post_order_position.at(a_min->instruction()) >
+                   post_order_position.at(b_min->instruction())) {
+          return false;
+        }
+
+        // Use buffer ids to break ties and ensure a stable ordering.
+        return a->id() < b->id();
       });
 
   std::vector<BufferAllocation::Index> allocation_indices;

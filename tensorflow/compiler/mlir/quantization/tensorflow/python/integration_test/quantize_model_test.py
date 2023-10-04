@@ -61,8 +61,7 @@ from tensorflow.python.training import checkpoint_utils
 from tensorflow.python.types import core
 
 # Type aliases for quantization method protobuf enums.
-_Method = quant_opts_pb2.QuantizationMethod.Method
-_ExperimentalMethod = quant_opts_pb2.QuantizationMethod.ExperimentalMethod
+_PresetMethod = quant_opts_pb2.QuantizationMethod.PresetMethod
 _CalibrationMethod = quant_opts_pb2.CalibrationOptions.CalibrationMethod
 
 _QuantizationComponent = (
@@ -272,7 +271,7 @@ class QuantizationOptionsTest(quantize_model_test_base.QuantizedModelTest):
 
     options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            method=_Method.METHOD_UNSPECIFIED
+            preset_method=_PresetMethod.METHOD_UNSPECIFIED
         )
     )
 
@@ -284,10 +283,12 @@ class QuantizationOptionsTest(quantize_model_test_base.QuantizedModelTest):
   def test_predefined_method_component_spec(self):
     options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         )
     )
-    quantize_model._populate_quantization_component_spec(options)
+    quantize_model._populate_quantization_component_spec(
+        options.quantization_method
+    )
 
     # Quantize activation, weight and bias for static range quantization.
     self.assertLen(options.quantization_method.quantization_component_specs, 3)
@@ -308,16 +309,18 @@ class QuantizationOptionsTest(quantize_model_test_base.QuantizedModelTest):
 
     with self.assertRaises(ValueError):
       # Activation 4bit is not a valid configuration.
-      quantize_model._populate_quantization_component_spec(options)
+      quantize_model._populate_quantization_component_spec(
+          options.quantization_method
+      )
 
   def test_invalid_method_raises_value_error(self):
     model = self.SimpleModel()
 
     saved_model_save.save(model, self._input_saved_model_path)
 
-    # Set an invalid value of -1 to QuantizationMethod.method.
+    # Set an invalid value of -1 to QuantizationMethod.preset_method.
     options = quant_opts_pb2.QuantizationOptions(
-        quantization_method=quant_opts_pb2.QuantizationMethod(method=-1)
+        quantization_method=quant_opts_pb2.QuantizationMethod(preset_method=-1)
     )
 
     with self.assertRaises(ValueError):
@@ -334,7 +337,7 @@ class QuantizationOptionsTest(quantize_model_test_base.QuantizedModelTest):
 
     options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.DYNAMIC_RANGE
+            preset_method=_PresetMethod.METHOD_DYNAMIC_RANGE_INT8
         ),
         op_set=quant_opts_pb2.TF,
         enable_per_channel_quantization=True,
@@ -365,7 +368,7 @@ class QuantizationOptionsTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.WEIGHT_ONLY
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_WEIGHT_ONLY_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -422,7 +425,7 @@ class QuantizationOptionsTest(quantize_model_test_base.QuantizedModelTest):
 
     options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         op_set=quant_opts_pb2.TF,
         force_graph_mode_calibration=True,
@@ -522,7 +525,7 @@ class TensorNamePreservationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signatures.keys(),
@@ -572,7 +575,7 @@ class TensorNamePreservationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_map.keys(),
@@ -715,7 +718,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     # Check the converted model with TF opset as the baseline.
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=[signature_key],
@@ -745,7 +748,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     # Check the converted model in the XLA opset.
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=[signature_key],
@@ -865,7 +868,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     # Check the converted model with TF opset as the baseline.
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=[signature_key],
@@ -900,7 +903,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     # Check the converted model in the target opset.
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=[signature_key],
@@ -988,7 +991,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     # Check the converted model with TF opset as the baseline.
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=[signature_key],
@@ -1019,7 +1022,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     # Check the converted model in the XLA opset.
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=[signature_key],
@@ -1107,7 +1110,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     expected_outputs = model.einsum(**model_inputs)
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=[signature_key],
@@ -1175,7 +1178,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     # Check the converted model does NOT have XLA opset.
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=[signature_key],
@@ -1216,7 +1219,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -1255,7 +1258,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     signature_def_keys = [signature_def_key]
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_def_keys,
@@ -1325,7 +1328,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=[signature_def_key],
@@ -1439,7 +1442,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_keys,
@@ -1476,6 +1479,16 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'enable_per_channel_quantization': False,
       },
       {
+          'testcase_name': 'dilation',
+          'activation_fn': None,
+          'has_bias': False,
+          'has_batch_norm': False,
+          'target_opset': quant_opts_pb2.TF,
+          'input_shape_dynamic': False,
+          'enable_per_channel_quantization': False,
+          'dilations': [1, 2, 2, 1],
+      },
+      {
           'testcase_name': 'relu',
           'activation_fn': nn_ops.relu,
           'has_bias': False,
@@ -1483,6 +1496,16 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'target_opset': quant_opts_pb2.TF,
           'input_shape_dynamic': False,
           'enable_per_channel_quantization': False,
+      },
+      {
+          'testcase_name': 'dilation_relu',
+          'activation_fn': nn_ops.relu,
+          'has_bias': False,
+          'has_batch_norm': False,
+          'target_opset': quant_opts_pb2.TF,
+          'input_shape_dynamic': False,
+          'enable_per_channel_quantization': False,
+          'dilations': [1, 2, 2, 1],
       },
       {
           'testcase_name': 'relu6',
@@ -1494,6 +1517,16 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'enable_per_channel_quantization': False,
       },
       {
+          'testcase_name': 'dilation_relu6',
+          'activation_fn': nn_ops.relu6,
+          'has_bias': False,
+          'has_batch_norm': False,
+          'target_opset': quant_opts_pb2.TF,
+          'input_shape_dynamic': False,
+          'enable_per_channel_quantization': False,
+          'dilations': [1, 2, 2, 1],
+      },
+      {
           'testcase_name': 'bn',
           'activation_fn': None,
           'has_bias': False,
@@ -1501,6 +1534,16 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'target_opset': quant_opts_pb2.TF,
           'input_shape_dynamic': False,
           'enable_per_channel_quantization': False,
+      },
+      {
+          'testcase_name': 'dilation_bn',
+          'activation_fn': None,
+          'has_bias': False,
+          'has_batch_norm': True,
+          'target_opset': quant_opts_pb2.TF,
+          'input_shape_dynamic': False,
+          'enable_per_channel_quantization': False,
+          'dilations': [1, 2, 2, 1],
       },
       {
           'testcase_name': 'with_bias',
@@ -1512,6 +1555,16 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'enable_per_channel_quantization': False,
       },
       {
+          'testcase_name': 'dilation_with_bias',
+          'activation_fn': None,
+          'has_bias': True,
+          'has_batch_norm': False,
+          'target_opset': quant_opts_pb2.TF,
+          'input_shape_dynamic': False,
+          'enable_per_channel_quantization': False,
+          'dilations': [1, 2, 2, 1],
+      },
+      {
           'testcase_name': 'with_bias_and_relu6',
           'activation_fn': nn_ops.relu6,
           'has_bias': True,
@@ -1519,6 +1572,16 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'target_opset': quant_opts_pb2.TF,
           'input_shape_dynamic': False,
           'enable_per_channel_quantization': False,
+      },
+      {
+          'testcase_name': 'dilation_with_bias_and_relu6',
+          'activation_fn': nn_ops.relu6,
+          'has_bias': True,
+          'has_batch_norm': False,
+          'target_opset': quant_opts_pb2.TF,
+          'input_shape_dynamic': False,
+          'enable_per_channel_quantization': False,
+          'dilations': [1, 2, 2, 1],
       },
       {
           'testcase_name': 'with_bias_and_bn_and_relu6',
@@ -1530,6 +1593,16 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'enable_per_channel_quantization': False,
       },
       {
+          'testcase_name': 'dilation_with_bias_and_bn_and_relu6',
+          'activation_fn': nn_ops.relu6,
+          'has_bias': True,
+          'has_batch_norm': True,
+          'target_opset': quant_opts_pb2.TF,
+          'input_shape_dynamic': False,
+          'enable_per_channel_quantization': False,
+          'dilations': [1, 2, 2, 1],
+      },
+      {
           'testcase_name': 'with_bias_and_relu6_to_xla',
           'activation_fn': nn_ops.relu6,
           'has_bias': True,
@@ -1537,6 +1610,16 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'target_opset': quant_opts_pb2.XLA,
           'input_shape_dynamic': False,
           'enable_per_channel_quantization': False,
+      },
+      {
+          'testcase_name': 'dilation_with_bias_and_relu6_to_xla',
+          'activation_fn': nn_ops.relu6,
+          'has_bias': True,
+          'has_batch_norm': False,
+          'target_opset': quant_opts_pb2.XLA,
+          'input_shape_dynamic': False,
+          'enable_per_channel_quantization': False,
+          'dilations': [1, 2, 2, 1],
       },
       {
           'testcase_name': 'with_bias_and_bn_and_relu6_to_xla',
@@ -1548,6 +1631,16 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'enable_per_channel_quantization': False,
       },
       {
+          'testcase_name': 'dilation_with_bias_and_bn_and_relu6_to_xla',
+          'activation_fn': nn_ops.relu6,
+          'has_bias': True,
+          'has_batch_norm': True,
+          'target_opset': quant_opts_pb2.XLA,
+          'input_shape_dynamic': False,
+          'enable_per_channel_quantization': False,
+          'dilations': [1, 2, 2, 1],
+      },
+      {
           'testcase_name': 'with_bias_and_relu6_to_xla_dynamic',
           'activation_fn': nn_ops.relu6,
           'has_bias': True,
@@ -1555,6 +1648,16 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'target_opset': quant_opts_pb2.XLA,
           'input_shape_dynamic': True,
           'enable_per_channel_quantization': False,
+      },
+      {
+          'testcase_name': 'dilation_with_bias_and_relu6_to_xla_dynamic',
+          'activation_fn': nn_ops.relu6,
+          'has_bias': True,
+          'has_batch_norm': False,
+          'target_opset': quant_opts_pb2.XLA,
+          'input_shape_dynamic': True,
+          'enable_per_channel_quantization': False,
+          'dilations': [1, 2, 2, 1],
       },
       {
           'testcase_name': 'with_bias_and_bn_and_relu6_to_xla_dynamic',
@@ -1566,6 +1669,16 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'enable_per_channel_quantization': False,
       },
       {
+          'testcase_name': 'dilation_with_bias_and_bn_and_relu6_to_xla_dynamic',
+          'activation_fn': nn_ops.relu6,
+          'has_bias': True,
+          'has_batch_norm': True,
+          'target_opset': quant_opts_pb2.XLA,
+          'input_shape_dynamic': True,
+          'enable_per_channel_quantization': False,
+          'dilations': [1, 2, 2, 1],
+      },
+      {
           'testcase_name': 'with_bias_and_relu6_to_uq',
           'activation_fn': nn_ops.relu6,
           'has_bias': True,
@@ -1573,6 +1686,16 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'target_opset': quant_opts_pb2.UNIFORM_QUANTIZED,
           'input_shape_dynamic': False,
           'enable_per_channel_quantization': False,
+      },
+      {
+          'testcase_name': 'dilation_with_bias_and_relu6_to_uq',
+          'activation_fn': nn_ops.relu6,
+          'has_bias': True,
+          'has_batch_norm': False,
+          'target_opset': quant_opts_pb2.UNIFORM_QUANTIZED,
+          'input_shape_dynamic': False,
+          'enable_per_channel_quantization': False,
+          'dilations': [1, 2, 2, 1],
       },
       {
           'testcase_name': 'with_bias_and_bn_and_relu6_to_uq',
@@ -1584,6 +1707,16 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'enable_per_channel_quantization': False,
       },
       {
+          'testcase_name': 'dilation_with_bias_and_bn_and_relu6_to_uq',
+          'activation_fn': nn_ops.relu6,
+          'has_bias': True,
+          'has_batch_norm': True,
+          'target_opset': quant_opts_pb2.UNIFORM_QUANTIZED,
+          'input_shape_dynamic': False,
+          'enable_per_channel_quantization': False,
+          'dilations': [1, 2, 2, 1],
+      },
+      {
           'testcase_name': 'with_bias_and_relu6_to_uq_per_channel',
           'activation_fn': nn_ops.relu6,
           'has_bias': True,
@@ -1593,6 +1726,16 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'enable_per_channel_quantization': True,
       },
       {
+          'testcase_name': 'dilation_with_bias_and_relu6_to_uq_per_channel',
+          'activation_fn': nn_ops.relu6,
+          'has_bias': True,
+          'has_batch_norm': False,
+          'target_opset': quant_opts_pb2.UNIFORM_QUANTIZED,
+          'input_shape_dynamic': False,
+          'enable_per_channel_quantization': True,
+          'dilations': [1, 2, 2, 1],
+      },
+      {
           'testcase_name': 'with_bias_and_bn_and_relu6_to_uq_per_channel',
           'activation_fn': nn_ops.relu6,
           'has_bias': True,
@@ -1600,6 +1743,18 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
           'target_opset': quant_opts_pb2.UNIFORM_QUANTIZED,
           'input_shape_dynamic': False,
           'enable_per_channel_quantization': True,
+      },
+      {
+          'testcase_name': (
+              'dilation_with_bias_and_bn_and_relu6_to_uq_per_channel'
+          ),
+          'activation_fn': nn_ops.relu6,
+          'has_bias': True,
+          'has_batch_norm': True,
+          'target_opset': quant_opts_pb2.UNIFORM_QUANTIZED,
+          'input_shape_dynamic': False,
+          'enable_per_channel_quantization': True,
+          'dilations': [1, 2, 2, 1],
       },
   )
   @test_util.run_in_graph_and_eager_modes
@@ -1611,12 +1766,20 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
       target_opset: quant_opts_pb2.OpSet,
       input_shape_dynamic: bool,
       enable_per_channel_quantization: bool,
+      dilations: Sequence[int] = None,
   ):
     input_shape = [None, None, None, 3] if input_shape_dynamic else [1, 3, 4, 3]
     filter_shape = [2, 3, 3, 2]
+    strides = [1, 1, 1, 1]
 
     model = self._create_conv2d_model(
-        input_shape, filter_shape, has_bias, has_batch_norm, activation_fn
+        input_shape,
+        filter_shape,
+        has_bias,
+        has_batch_norm,
+        activation_fn,
+        strides,
+        dilations,
     )
     saved_model_save.save(model, self._input_saved_model_path)
 
@@ -1641,7 +1804,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -1675,7 +1838,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
       target_outputs = converted_model.signatures['serving_default'](
           input_tensor=ops.convert_to_tensor(input_data)
       )
-      self.assertAllClose(target_outputs, expected_outputs, atol=0.05)
+      self.assertAllClose(target_outputs, expected_outputs, atol=0.06)
 
     if target_opset == quant_opts_pb2.XLA:
       self.assertTrue(self._contains_op(output_graphdef, 'XlaConvV2'))
@@ -1766,7 +1929,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -1816,7 +1979,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -2037,7 +2200,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -2191,7 +2354,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     # Check the converted model in the target opset.
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -2228,6 +2391,64 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
       self.assertAllClose(new_outputs, expected_outputs, atol=0.25)
     else:
       self.assertAllClose(new_outputs, expected_outputs, atol=0.13)
+
+  # NOTE: Isolated the most basic configuration from `test_matmul_ptq_model`
+  # for StableHLO PTQ prototype testing while integrating. Please note this
+  # test is for intermediate testing purposes as the migration is not complete.
+  # TODO: b/298581932 - Add the full test case for STABLEHLO opset once
+  # migration is complete.
+  @test_util.run_in_graph_and_eager_modes
+  def test_matmul_ptq_model_stablehlo(self):
+    activation_fn = None
+    has_bias = False
+    batch_sizes = ([], [])
+    target_opset = quant_opts_pb2.STABLEHLO
+
+    lhs_batch_size, rhs_batch_size = batch_sizes
+    input_shape = (*lhs_batch_size, 1, 1024)
+    filter_shape = (*rhs_batch_size, 1024, 3)
+    static_input_shape = [dim if dim is not None else 2 for dim in input_shape]
+    self._create_matmul_model(
+        input_shape,
+        filter_shape,
+        self._input_saved_model_path,
+        has_bias,
+        activation_fn,
+    )
+    rng = np.random.default_rng(seed=1234)
+
+    def data_gen() -> repr_dataset.RepresentativeDataset:
+      for _ in range(5):
+        yield {
+            'input_tensor': rng.uniform(
+                low=0.0, high=1.0, size=static_input_shape
+            ).astype(np.float32)
+        }
+
+    tags = {tag_constants.SERVING}
+
+    quantization_options = quant_opts_pb2.QuantizationOptions(
+        quantization_method=quant_opts_pb2.QuantizationMethod(
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
+        ),
+        tags=tags,
+        signature_keys=['serving_default'],
+        op_set=target_opset,
+    )
+    # TODO: b/299545836 - Remove exception handling below after migrating
+    # StableHLO export passes.
+    with self.assertRaisesRegex(  # pylint: disable=g-error-prone-assert-raises
+        Exception,
+        "Failed to convert MLIR to GraphDef. op node 'stablehlo.constant' was"
+        ' not a TF op!',
+    ):
+      converted_model = quantize_model.quantize(
+          self._input_saved_model_path,
+          self._output_saved_model_path,
+          quantization_options,
+          representative_dataset=data_gen(),
+      )
+      self.assertIsNotNone(converted_model)
 
   @parameterized.named_parameters(
       {
@@ -2274,7 +2495,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -2341,7 +2562,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -2377,7 +2598,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     # Check the converted model in the target opset.
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -2439,7 +2660,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -2507,7 +2728,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -2567,12 +2788,12 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
         op_set=quant_opts_pb2.TF,
-        freeze_all_variables=quant_opts_pb2.FreezeAllVariables(enabled=False),
+        freeze_all_variables=False,
     )
 
     converted_model = quantize_model.quantize(
@@ -2636,7 +2857,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -2680,7 +2901,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -2722,7 +2943,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -2764,7 +2985,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -2816,7 +3037,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -2863,7 +3084,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     signature_def_keys = [signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY]
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_def_keys,
@@ -2931,7 +3152,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -2973,7 +3194,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -3025,7 +3246,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -3128,7 +3349,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -3228,7 +3449,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['sig1', 'sig2'],
@@ -3271,7 +3492,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags={tag_constants.SERVING},
         signature_keys=['sig1', 'sig2'],
@@ -3310,7 +3531,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_keys,
@@ -3366,7 +3587,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_keys,
@@ -3420,12 +3641,12 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_keys,
         op_set=quant_opts_pb2.TF,
-        freeze_all_variables=quant_opts_pb2.FreezeAllVariables(enabled=False),
+        freeze_all_variables=False,
     )
 
     repr_ds = self._create_data_generator(
@@ -3495,7 +3716,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_keys,
@@ -3555,7 +3776,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['sig1', 'sig2'],
@@ -3627,7 +3848,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_keys,
@@ -3669,7 +3890,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_keys,
@@ -3717,7 +3938,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     signature_keys = [signature_key]
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_keys,
@@ -3759,7 +3980,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     signature_def_keys = [signature_def_key]
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_def_keys,
@@ -3830,7 +4051,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     signature_def_keys = [signature_def_key]
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_def_keys,
@@ -4018,7 +4239,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     # Check the converted model with TF opset as the baseline.
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=[signature_key],
@@ -4054,7 +4275,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     # Check the converted model in the target opset.
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=[signature_key],
@@ -4107,7 +4328,7 @@ class StaticRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     signature_keys = [signature_key]
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_keys,
@@ -4197,7 +4418,7 @@ class DynamicRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.DYNAMIC_RANGE
+            preset_method=_PresetMethod.METHOD_DYNAMIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -4257,7 +4478,7 @@ class DynamicRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.DYNAMIC_RANGE
+            preset_method=_PresetMethod.METHOD_DYNAMIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -4338,7 +4559,7 @@ class DynamicRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.DYNAMIC_RANGE
+            preset_method=_PresetMethod.METHOD_DYNAMIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -4443,7 +4664,7 @@ class DynamicRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.DYNAMIC_RANGE
+            preset_method=_PresetMethod.METHOD_DYNAMIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -4564,7 +4785,7 @@ class DynamicRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.DYNAMIC_RANGE
+            preset_method=_PresetMethod.METHOD_DYNAMIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -4614,7 +4835,7 @@ class DynamicRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.DYNAMIC_RANGE
+            preset_method=_PresetMethod.METHOD_DYNAMIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -4672,7 +4893,7 @@ class DynamicRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     signature_keys = [signature_key]
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.DYNAMIC_RANGE
+            preset_method=_PresetMethod.METHOD_DYNAMIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_keys,
@@ -4714,7 +4935,7 @@ class DynamicRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.DYNAMIC_RANGE
+            preset_method=_PresetMethod.METHOD_DYNAMIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -4783,7 +5004,7 @@ class DynamicRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     signature_keys = [signature_key]
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.DYNAMIC_RANGE
+            preset_method=_PresetMethod.METHOD_DYNAMIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_keys,
@@ -4830,7 +5051,7 @@ class DynamicRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.DYNAMIC_RANGE
+            preset_method=_PresetMethod.METHOD_DYNAMIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -4862,7 +5083,7 @@ class DynamicRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.DYNAMIC_RANGE
+            preset_method=_PresetMethod.METHOD_DYNAMIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -4903,7 +5124,7 @@ class DynamicRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     signature_def_keys = [signature_def_key]
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.DYNAMIC_RANGE
+            preset_method=_PresetMethod.METHOD_DYNAMIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=signature_def_keys,
@@ -4961,7 +5182,7 @@ class DynamicRangeQuantizationTest(quantize_model_test_base.QuantizedModelTest):
         self._output_saved_model_path,
         quantization_options=quant_opts_pb2.QuantizationOptions(
             quantization_method=quant_opts_pb2.QuantizationMethod(
-                experimental_method=_ExperimentalMethod.DYNAMIC_RANGE
+                preset_method=_PresetMethod.METHOD_DYNAMIC_RANGE_INT8
             ),
             tags=tags,
             signature_keys=signature_def_keys,
@@ -5033,7 +5254,7 @@ class WeightOnlyQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.WEIGHT_ONLY
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_WEIGHT_ONLY_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -5092,7 +5313,7 @@ class WeightOnlyQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.WEIGHT_ONLY
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_WEIGHT_ONLY_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -5152,7 +5373,7 @@ class WeightOnlyQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.WEIGHT_ONLY
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_WEIGHT_ONLY_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -5247,7 +5468,7 @@ class WeightOnlyQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.WEIGHT_ONLY
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_WEIGHT_ONLY_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -5345,7 +5566,7 @@ class WeightOnlyQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.WEIGHT_ONLY
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_WEIGHT_ONLY_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -5402,7 +5623,7 @@ class WeightOnlyQuantizationTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.WEIGHT_ONLY
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_WEIGHT_ONLY_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -5460,7 +5681,7 @@ class WeightOnlyQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     # Quantize the model
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=quant_opts_pb2.QuantizationMethod.ExperimentalMethod.WEIGHT_ONLY
+            preset_method=quant_opts_pb2.QuantizationMethod.PresetMethod.METHOD_STATIC_RANGE_WEIGHT_ONLY_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -5511,7 +5732,7 @@ class WeightOnlyQuantizationTest(quantize_model_test_base.QuantizedModelTest):
     tags = {tag_constants.SERVING}
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.WEIGHT_ONLY
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_WEIGHT_ONLY_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -5626,7 +5847,7 @@ class DebuggerTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         op_set=quant_opts_pb2.XLA,
         debugger_options=quant_opts_pb2.DebuggerOptions(
@@ -5729,7 +5950,7 @@ class DebuggerTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         op_set=quant_opts_pb2.XLA,
         debugger_options=quant_opts_pb2.DebuggerOptions(
@@ -5998,7 +6219,7 @@ class CalibrationOptionsTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -6157,11 +6378,13 @@ class CalibrationOptionsTest(quantize_model_test_base.QuantizedModelTest):
   ):
     quant_opts = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         calibration_options=calibration_options,
     )
-    quantize_model._populate_quantization_component_spec(quant_opts)
+    quantize_model._populate_quantization_component_spec(
+        quant_opts.quantization_method
+    )
     quantize_model._populate_calibration_options(quant_opts)
 
     self.assertEqual(
@@ -6274,7 +6497,7 @@ class CalibrationOptionsTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options_min_max = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -6301,7 +6524,7 @@ class CalibrationOptionsTest(quantize_model_test_base.QuantizedModelTest):
 
     quantization_options_average_min_max = quant_opts_pb2.QuantizationOptions(
         quantization_method=quant_opts_pb2.QuantizationMethod(
-            experimental_method=_ExperimentalMethod.STATIC_RANGE
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
         ),
         tags=tags,
         signature_keys=['serving_default'],
@@ -6352,6 +6575,316 @@ class CalibrationOptionsTest(quantize_model_test_base.QuantizedModelTest):
     )
 
     self.assertLess(average_min_max_mse, min_max_mse)
+
+
+class SelectiveQuantizationTest(quantize_model_test_base.QuantizedModelTest):
+  """Test cases regarding selective quantization."""
+
+  def test_unitwise_spec_with_no_units(self):
+    _, y_shape, bias_shape, x_signature, y_signature = (
+        self._prepare_sample_einsum_datashapes('abc,acd->abd')
+    )
+    model = self._create_einsum_model(
+        'abc,acd->abd',
+        y_shape,
+        x_signature,
+        y_signature,
+        bias_shape,
+        is_qat_model=True,
+    )
+    saved_model_save.save(
+        model, self._input_saved_model_path, signatures=model.einsum_with_kernel
+    )
+
+    signature_key = signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY
+    tags = {tag_constants.SERVING}
+    quantization_options = quant_opts_pb2.QuantizationOptions(
+        quantization_method=quant_opts_pb2.QuantizationMethod(
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
+        ),
+        tags=tags,
+        signature_keys=[signature_key],
+        op_set=quant_opts_pb2.XLA,
+        unit_wise_quantization_specs=[
+            quant_opts_pb2.UnitWiseQuantizationSpec(
+                unit=[],
+                quantization_method=quant_opts_pb2.QuantizationMethod(
+                    preset_method=quant_opts_pb2.QuantizationMethod.METHOD_NO_QUANTIZE
+                ),
+            )
+        ],
+    )
+
+    with self.assertRaisesRegex(
+        ValueError, 'UnitWiseQuantizationSpec must contain at least one unit.'
+    ):
+      quantize_model.quantize(
+          self._input_saved_model_path,
+          self._output_saved_model_path,
+          quantization_options,
+      )
+
+  def test_unitwise_spec_missing_unit_info(self):
+    _, y_shape, bias_shape, x_signature, y_signature = (
+        self._prepare_sample_einsum_datashapes('abc,acd->abd')
+    )
+    model = self._create_einsum_model(
+        'abc,acd->abd',
+        y_shape,
+        x_signature,
+        y_signature,
+        bias_shape,
+        is_qat_model=True,
+    )
+    saved_model_save.save(
+        model, self._input_saved_model_path, signatures=model.einsum_with_kernel
+    )
+
+    signature_key = signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY
+    tags = {tag_constants.SERVING}
+    quantization_options = quant_opts_pb2.QuantizationOptions(
+        quantization_method=quant_opts_pb2.QuantizationMethod(
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
+        ),
+        tags=tags,
+        signature_keys=[signature_key],
+        op_set=quant_opts_pb2.XLA,
+        unit_wise_quantization_specs=[
+            quant_opts_pb2.UnitWiseQuantizationSpec(
+                unit=[
+                    quant_opts_pb2.UnitWiseQuantizationSpec.QuantizationUnit(),
+                ],
+                quantization_method=quant_opts_pb2.QuantizationMethod(
+                    preset_method=quant_opts_pb2.QuantizationMethod.METHOD_NO_QUANTIZE
+                ),
+            )
+        ],
+    )
+
+    with self.assertRaisesRegex(
+        ValueError, 'Either `op_type` or `node_name` must be specified.'
+    ):
+      quantize_model.quantize(
+          self._input_saved_model_path,
+          self._output_saved_model_path,
+          quantization_options,
+      )
+
+  def test_unitwise_spec_unsupported_method(self):
+    _, y_shape, bias_shape, x_signature, y_signature = (
+        self._prepare_sample_einsum_datashapes('abc,acd->abd')
+    )
+    model = self._create_einsum_model(
+        'abc,acd->abd',
+        y_shape,
+        x_signature,
+        y_signature,
+        bias_shape,
+        is_qat_model=True,
+    )
+    saved_model_save.save(
+        model, self._input_saved_model_path, signatures=model.einsum_with_kernel
+    )
+
+    signature_key = signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY
+    tags = {tag_constants.SERVING}
+    quantization_options = quant_opts_pb2.QuantizationOptions(
+        quantization_method=quant_opts_pb2.QuantizationMethod(
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
+        ),
+        tags=tags,
+        signature_keys=[signature_key],
+        op_set=quant_opts_pb2.XLA,
+        unit_wise_quantization_specs=[
+            quant_opts_pb2.UnitWiseQuantizationSpec(
+                unit=[
+                    quant_opts_pb2.UnitWiseQuantizationSpec.QuantizationUnit(
+                        op_type='Conv2D',
+                    ),
+                ],
+                quantization_method=quant_opts_pb2.QuantizationMethod(
+                    preset_method=quant_opts_pb2.QuantizationMethod.METHOD_STATIC_RANGE_WEIGHT_ONLY_INT8
+                ),
+            )
+        ],
+    )
+
+    with self.assertRaisesRegex(
+        ValueError,
+        'Currently unit-wise quantization spec only supports NO_QUANTIZE and'
+        ' same quantization method as the top-level',
+    ):
+      quantize_model.quantize(
+          self._input_saved_model_path,
+          self._output_saved_model_path,
+          quantization_options,
+      )
+
+  def test_selective_quantization_qat(self):
+    _, y_shape, bias_shape, x_signature, y_signature = (
+        self._prepare_sample_einsum_datashapes('abc,acd->abd')
+    )
+    model = self._create_einsum_model(
+        'abc,acd->abd',
+        y_shape,
+        x_signature,
+        y_signature,
+        bias_shape,
+        is_qat_model=True,
+    )
+    saved_model_save.save(
+        model, self._input_saved_model_path, signatures=model.einsum_with_kernel
+    )
+
+    signature_key = signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY
+    tags = {tag_constants.SERVING}
+    quantization_options = quant_opts_pb2.QuantizationOptions(
+        quantization_method=quant_opts_pb2.QuantizationMethod(
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
+        ),
+        tags=tags,
+        signature_keys=[signature_key],
+        op_set=quant_opts_pb2.XLA,
+        unit_wise_quantization_specs=[
+            quant_opts_pb2.UnitWiseQuantizationSpec(
+                unit=[
+                    quant_opts_pb2.UnitWiseQuantizationSpec.QuantizationUnit(
+                        op_type='Einsum',
+                    ),
+                ],
+                quantization_method=quant_opts_pb2.QuantizationMethod(
+                    preset_method=quant_opts_pb2.QuantizationMethod.METHOD_NO_QUANTIZE
+                ),
+            )
+        ],
+    )
+
+    converted_model = quantize_model.quantize(
+        self._input_saved_model_path,
+        self._output_saved_model_path,
+        quantization_options,
+    )
+    self.assertIsNotNone(converted_model)
+    self.assertCountEqual(
+        converted_model.signatures._signatures.keys(), {signature_key}
+    )
+    loader = saved_model_loader.SavedModelLoader(self._output_saved_model_path)
+    graphdef = loader.get_meta_graph_def_from_tags(tags).graph_def
+    # The Einsum ops shouldn't be quantized.
+    self.assertTrue(self._contains_op(graphdef, 'Einsum'))
+    self.assertFalse(self._contains_op(graphdef, 'XlaDotV2'))
+
+  def test_selective_quantization_ptq(self):
+    x_shape, y_shape, bias_shape, x_signature, y_signature = (
+        self._prepare_sample_einsum_datashapes('abc,acd->abd')
+    )
+    model = self._create_einsum_model(
+        'abc,acd->abd',
+        y_shape,
+        x_signature,
+        y_signature,
+        bias_shape,
+        is_qat_model=False,
+    )
+    saved_model_save.save(
+        model, self._input_saved_model_path, signatures=model.einsum_with_kernel
+    )
+
+    signature_key = signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY
+    tags = {tag_constants.SERVING}
+    quantization_options = quant_opts_pb2.QuantizationOptions(
+        quantization_method=quant_opts_pb2.QuantizationMethod(
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
+        ),
+        tags=tags,
+        signature_keys=[signature_key],
+        op_set=quant_opts_pb2.XLA,
+        unit_wise_quantization_specs=[
+            quant_opts_pb2.UnitWiseQuantizationSpec(
+                unit=[
+                    quant_opts_pb2.UnitWiseQuantizationSpec.QuantizationUnit(
+                        op_type='Einsum',
+                    ),
+                ],
+                quantization_method=quant_opts_pb2.QuantizationMethod(
+                    preset_method=quant_opts_pb2.QuantizationMethod.METHOD_NO_QUANTIZE
+                ),
+            )
+        ],
+    )
+
+    rng = np.random.default_rng(seed=1234)
+
+    def data_gen() -> repr_dataset.RepresentativeDataset:
+      for _ in range(10):
+        yield {
+            'x': rng.uniform(low=0.0, high=1.0, size=x_shape).astype(np.float32)
+        }
+
+    converted_model = quantize_model.quantize(
+        self._input_saved_model_path,
+        self._output_saved_model_path,
+        quantization_options,
+        representative_dataset=data_gen(),
+    )
+    self.assertIsNotNone(converted_model)
+    self.assertCountEqual(
+        converted_model.signatures._signatures.keys(), {signature_key}
+    )
+    loader = saved_model_loader.SavedModelLoader(self._output_saved_model_path)
+    graphdef = loader.get_meta_graph_def_from_tags(tags).graph_def
+    # The Einsum ops shouldn't be quantized.
+    self.assertTrue(self._contains_op(graphdef, 'Einsum'))
+    self.assertFalse(self._contains_op(graphdef, 'XlaDotV2'))
+
+  def test_selective_quantization_on_gather(
+      self,
+  ):
+    input_type = dtypes.int32
+    model = self._create_simple_gather_and_conv_model(
+        input_type,
+        filter_shape=(2, 3, 3, 1024),
+        is_qat_model=True,
+    )
+
+    saved_model_save.save(model, self._input_saved_model_path)
+
+    tags = {tag_constants.SERVING}
+    quantization_options = quant_opts_pb2.QuantizationOptions(
+        quantization_method=quant_opts_pb2.QuantizationMethod(
+            preset_method=_PresetMethod.METHOD_STATIC_RANGE_INT8
+        ),
+        tags=tags,
+        signature_keys=['serving_default'],
+        op_set=quant_opts_pb2.XLA,
+        unit_wise_quantization_specs=[
+            quant_opts_pb2.UnitWiseQuantizationSpec(
+                unit=[
+                    quant_opts_pb2.UnitWiseQuantizationSpec.QuantizationUnit(
+                        op_type='GatherV2',
+                    ),
+                ],
+                quantization_method=quant_opts_pb2.QuantizationMethod(
+                    preset_method=quant_opts_pb2.QuantizationMethod.METHOD_NO_QUANTIZE
+                ),
+            )
+        ],
+    )
+
+    converted_model = quantize_model.quantize(
+        self._input_saved_model_path,
+        self._output_saved_model_path,
+        quantization_options,
+    )
+    self.assertIsNotNone(converted_model)
+    loader = saved_model_loader.SavedModelLoader(self._output_saved_model_path)
+    graphdef = loader.get_meta_graph_def_from_tags(tags).graph_def
+    # The Conv2D op shouldn't be quantized as it has no FakeQuant on input.
+    self.assertTrue(self._contains_op(graphdef, 'Conv2D'))
+    # If the Gather op is quantized, input_model_size / output_model_size > 2.
+    self.assertSizeRatioLessThan(
+        self._input_saved_model_path, self._output_saved_model_path, 1.15
+    )
 
 
 if __name__ == '__main__':
