@@ -29,9 +29,11 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/tensorflow/utils/data_dumper_logger_config.h"
 #include "tensorflow/compiler/mlir/tensorflow/utils/dump_mlir_util.h"
 #include "tensorflow/compiler/mlir/tensorflow/utils/error_util.h"
+#include "tensorflow/compiler/mlir/tf2xla/api/v1/tf_dialect_to_executor.h"
 #include "tensorflow/compiler/mlir/tf2xla/api/v2/tf_dialect_to_executor.h"
 #include "tensorflow/compiler/mlir/tf2xla/internal/clustering_bridge_passes.h"
 #include "tensorflow/compiler/mlir/tf2xla/internal/inference/inference_passes.h"
+#include "tensorflow/compiler/mlir/tf2xla/internal/logging_hooks.h"
 #include "tensorflow/core/framework/metrics.h"
 #include "tensorflow/core/platform/error_payloads.h"
 #include "tensorflow/core/platform/stacktrace.h"
@@ -40,43 +42,10 @@ limitations under the License.
 #include "tsl/platform/error_logging.h"
 
 namespace mlir {
-namespace {
-// Add logger to bridge passmanager.
-// Enable timing statistics per pass for the bridge passmanager.
-void EnableDetailedLogging(PassManager *pm,
-                           llvm::StringRef module_name = llvm::StringRef()) {
-  // Print the whole module after each pass, which requires disabling
-  // multi-threading as well.
-  pm->getContext()->disableMultithreading();
-  pm->enableIRPrinting(std::make_unique<::tensorflow::DataDumperLoggerConfig>(
-      [module_name](const std::string &pass_tag_name, mlir::Operation *op) {
-        return DEBUG_DATA_DUMPER()->GetDumpFilename(
-            module_name.str(), kDebugGroupBridgePhase1, pass_tag_name);
-      },
-      "",
-      /*print_module_scope=*/true));
-  pm->enableTiming();
-}
-
-// Name of component for error logging. This name is fixed and required to
-// enable logging.
-constexpr char kBridgeComponent[] = "TFXLABridge";
-}  // namespace
-
 namespace TFTPU {
-
 namespace {
-std::string GetMLIRModuleText(mlir::Operation *op,
-                              const mlir::PassManager *pass_manager) {
-  std::string module_txt;
-  llvm::raw_string_ostream os(module_txt);
 
-  if (pass_manager) ::tensorflow::PrintPassPipeline(*pass_manager, op, os);
-
-  op->print(os, mlir::OpPrintingFlags().useLocalScope());
-
-  return os.str();
-}
+constexpr char kBridgeComponent[] = "TFXLABridge";
 
 // Run the TF XLA Bridge based on the input pipeline, which can be either TPU
 // bridge pipeline or non TPU bridge pipeline.
@@ -113,9 +82,11 @@ tensorflow::Status RunTFXLABridge(
         module, llvm::StringRef(), &bridge);
   }
 
-  if (VLOG_IS_ON(2) || DEBUG_DATA_DUMPER()->ShouldDump(
-                           module_name.str(), kDebugGroupBridgePhase1)) {
-    EnableDetailedLogging(&bridge, module_name);
+  if (VLOG_IS_ON(2) ||
+      DEBUG_DATA_DUMPER()->ShouldDump(module_name.str(),
+                                      kDebugGroupBridgePhase1Clustering)) {
+    ::tensorflow::tf2xla::internal::EnablePassIRPrinting(
+        bridge, kDebugGroupBridgePhase1Clustering, module_name);
   }
 
   LogicalResult result = bridge.run(module);
@@ -142,36 +113,6 @@ void CreateTPUBridgePipeline(OpPassManager &pm, llvm::StringRef module_name) {
                                                                   module_name);
 }
 
-void CreateTPUBridgePipelineV1(OpPassManager &pm) {
-  pm.addPass(tf2xla::internal::CreateInferenceMetricsPass());
-
-  // Convert to unified compilation and replication attributes.
-  pm.addNestedPass<func::FuncOp>(
-      TF::CreateCanonicalizeCompileAndReplicateAttributesPass());
-  // Guarantee all functions have one use, which enables more exact shape
-  // inference.
-  pm.addPass(mlir::TF::CreateGuaranteeAllFuncsOneUsePass());
-  pm.addPass(TF::CreateTFShapeInferencePass());
-  // For V1 compatibility, we process a module where the graph does not have
-  // feeds and fetched. We extract first the TPU computation in a submodule,
-  // where it'll be in a function with args and returned values, much more like
-  // a TF v2 module. We can then run the usual pipeline on this nested module.
-  // Afterward we inline back in the parent module and delete the nested one.
-  pm.addPass(tf_executor::CreateTFExecutorTPUV1IslandCoarseningPass());
-  pm.addPass(tf_executor::CreateTFExecutorTPUV1IslandOutliningPass());
-  OpPassManager &nested_module = pm.nest<ModuleOp>();
-  tensorflow::tf2xla::internal::AddBridgeClusteringPipelinePasses(
-      nested_module);
-
-  pm.addPass(tf_executor::CreateTFExecutorTPUV1IslandInliningPass());
-  // There are cases where we don't consume all compilation and replication
-  // attributes like we do for the V2 pipeline, so we need to convert them from
-  // unified to legacy attributes before they get exposed to outside of the
-  // bridge.
-  pm.addNestedPass<func::FuncOp>(
-      CreateConvertToLegacyCompileAndReplicateAttributesPass());
-}
-
 tensorflow::Status TPUBridge(ModuleOp module, bool fallback_enabled,
                              llvm::StringRef module_name) {
   VLOG(2)
@@ -191,7 +132,8 @@ tensorflow::Status TPUBridge(ModuleOp module, bool fallback_enabled,
       tensorflow::core::platform::ErrorSourceProto::MLIR_BRIDGE_PHASE_1,
       bridge_status);
   if (!bridge_status.ok()) {
-    tsl::error_logging::Log(kBridgeComponent, "TFXLA_PHASE_ONE_MLIR_TPU_BRIDGE",
+    tsl::error_logging::Log(TFTPU::kBridgeComponent,
+                            "TFXLA_PHASE_ONE_MLIR_TPU_BRIDGE",
                             bridge_status.ToString())
         .IgnoreError();
     return bridge_status;
@@ -201,33 +143,13 @@ tensorflow::Status TPUBridge(ModuleOp module, bool fallback_enabled,
       tensorflow::tf2xla::v2::ExportFromTensorflowDialectToExecutor(
           module, module_name);
   if (!export_status.ok()) {
-    tsl::error_logging::Log(kBridgeComponent,
+    tsl::error_logging::Log(TFTPU::kBridgeComponent,
                             "TFXLA_PHASE_ONE_MLIR_TPU_BRIDGE_EXPORT",
                             export_status.ToString())
         .IgnoreError();
   }
 
   return export_status;
-}
-tensorflow::Status TPUBridgeV1Compat(ModuleOp module, bool fallback_enabled) {
-  VLOG(2)
-      << "TPU V1 Compat Bridge called stack trace is "
-      << "(NOTE: this is not an error; rather the stack trace for debugging) : "
-      << tensorflow::CurrentStackTrace();
-  Status status = RunTFXLABridge(module, [](OpPassManager &pm) {
-    CreateTPUBridgePipelineV1(pm);
-    // Add set of passes to lower back to graph (from tf_executor).
-    TF::AddGraphExportLoweringPasses(pm);
-  });
-  tensorflow::metrics::UpdateTfMlirBridgeFirstPhaseCounter(
-      "tpu", "v1", fallback_enabled, status.ok() ? "success" : "failure");
-  if (!status.ok()) {
-    tsl::error_logging::Log(kBridgeComponent,
-                            "TFXLA_PHASE_ONE_MLIR_TPU_V1_COMPAT_BRIDGE",
-                            status.ToString())
-        .IgnoreError();
-  }
-  return status;
 }
 
 }  // namespace TFTPU
@@ -275,7 +197,10 @@ tensorflow::Status RunBridgeWithStandardPipeline(ModuleOp module,
 
   if (enable_logging || VLOG_IS_ON(1)) {
     tensorflow::DumpMlirOpToFile(kStandardPipelineBefore, module, "", &bridge);
-    if (VLOG_IS_ON(2)) EnableDetailedLogging(&bridge);
+    if (VLOG_IS_ON(2)) {
+      tensorflow::tf2xla::internal::EnablePassIRPrinting(
+          bridge, TFTPU::kBridgeComponent);
+    }
   }
   LogicalResult result = bridge.run(module);
   (void)result;
@@ -377,7 +302,7 @@ tensorflow::Status RunTFXLABridge(ModuleOp module,
       /*fallback_enabled*/ false,
       /*result*/ status.ok() ? "success" : "failure");
   if (!status.ok()) {
-    tsl::error_logging::Log(kBridgeComponent,
+    tsl::error_logging::Log(TFTPU::kBridgeComponent,
                             "TFXLA_PHASE_ONE_MLIR_CPU/GPU_BRIDGE",
                             status.ToString())
         .IgnoreError();
@@ -387,7 +312,7 @@ tensorflow::Status RunTFXLABridge(ModuleOp module,
       tensorflow::tf2xla::v2::ExportFromTensorflowDialectToExecutor(
           module, module_name);
   if (!export_status.ok()) {
-    tsl::error_logging::Log(kBridgeComponent,
+    tsl::error_logging::Log(TFTPU::kBridgeComponent,
                             "TFXLA_PHASE_ONE_MLIR_CPU_BRIDGE_EXPORT",
                             export_status.ToString())
         .IgnoreError();

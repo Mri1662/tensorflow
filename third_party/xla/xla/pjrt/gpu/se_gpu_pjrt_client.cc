@@ -39,6 +39,7 @@ limitations under the License.
 #include "absl/synchronization/blocking_counter.h"
 #include "absl/time/time.h"
 #include "xla/client/local_client.h"
+#include "xla/client/xla_computation.h"
 #include "xla/pjrt/distributed/topology_util.h"
 #include "xla/pjrt/pjrt_client.h"
 #include "xla/pjrt/pjrt_compiler.h"
@@ -50,6 +51,7 @@ limitations under the License.
 #include "xla/service/compiler.h"
 #include "xla/service/executable.h"
 #include "xla/stream_executor/device_memory.h"
+#include "xla/stream_executor/stream_executor_internal.h"
 #include "tsl/framework/allocator.h"
 #include "tsl/framework/bfc_allocator.h"
 #include "tsl/lib/strings/proto_serialization.h"
@@ -66,6 +68,7 @@ limitations under the License.
 #include "third_party/gpus/cuda/include/cuda_runtime_api.h"
 #include "xla/pjrt/compile_options.pb.h"
 #include "xla/pjrt/gpu/nccl_id_store.h"
+#include "xla/pjrt/metrics.h"
 #include "xla/pjrt/stream_executor_executable.pb.h"
 #include "xla/service/gpu/gpu_compiler.h"
 #include "xla/stream_executor/gpu/gpu_cudamallocasync_allocator.h"
@@ -534,6 +537,20 @@ PjRtFuture<absl::Status> StreamExecutorGpuClient::CopyRawSubBufferToHost(
       });
 }
 
+StatusOr<std::unique_ptr<PjRtLoadedExecutable>>
+StreamExecutorGpuClient::Compile(const XlaComputation& computation,
+                                 CompileOptions options) {
+  auto executable = PjRtStreamExecutorClient::Compile(computation, options);
+
+#ifdef GOOGLE_CUDA
+  for (const auto& device : addressable_devices()) {
+    metrics::RecordFreeGpuSystemMemory(device->local_hardware_id());
+  }
+#endif  // GOOGLE_CUDA
+
+  return executable;
+}
+
 namespace {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 StatusOr<std::unique_ptr<StreamExecutorExecutable>> FromProto(
@@ -556,9 +573,9 @@ StatusOr<std::unique_ptr<StreamExecutorExecutable>> FromProto(
 }  // namespace
 
 StatusOr<std::unique_ptr<PjRtLoadedExecutable>>
-StreamExecutorGpuClient::LoadSerializedExecutable(
-    absl::string_view serialized, std::optional<CompileOptions> options,
-    const LoadOptions& load_options) {
+StreamExecutorGpuClient::LoadSerialized(absl::string_view serialized,
+                                        std::optional<CompileOptions> options,
+                                        const LoadOptions& load_options) {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   StreamExecutorExecutableProto proto;
   if (serialized.size() > std::numeric_limits<int>::max()) {
@@ -572,7 +589,8 @@ StreamExecutorGpuClient::LoadSerializedExecutable(
         "failed");
   }
   TF_ASSIGN_OR_RETURN(auto se_executable, FromProto(proto));
-  return Load(std::move(se_executable), LoadOptions());
+  // TODO(b/296466237): Unify the `Load` method.
+  return Load(std::move(se_executable));
 #endif
   return absl::InternalError("LoadSerialized only works with cuda or rocm.");
 }
@@ -593,8 +611,7 @@ std::vector<std::unique_ptr<PjRtStreamExecutorDevice>> BuildLocalDevices(
 }
 
 StatusOr<std::unique_ptr<PjRtLoadedExecutable>> StreamExecutorGpuClient::Load(
-    std::unique_ptr<PjRtExecutable> executable,
-    const LoadOptions& load_options) {
+    std::unique_ptr<PjRtExecutable> executable) {
   auto se_executable = absl::WrapUnique(
       tensorflow::down_cast<StreamExecutorExecutable*>(executable.release()));
 
@@ -648,19 +665,19 @@ StatusOr<std::unique_ptr<se::MultiDeviceAdapter>> CreateCudaAsyncAllocator(
       return Unavailable("Failed to query available memory from device %i",
                          device_ordinal);
     }
-    // To allow full GPU memory to be visible to the BFC allocator if using
-    // unified memory.
+    // To allow full GPU memory to be visible to the Cuda Async allocator
+    // if using unified memory.
     // When unified memory is enabled, allow GPU memory oversubscription by
     // setting memory_fraction > 1.
     size_t allocator_memory = total_memory * memory_fraction;
     if (preallocate) {
       LOG(INFO) << "XLA backend allocating " << allocator_memory
                 << " bytes on device " << device_ordinal
-                << " for BFCAllocator.";
+                << " for CudaAsyncAllocator.";
     } else {
       LOG(INFO) << "XLA backend will use up to " << allocator_memory
                 << " bytes on device " << device_ordinal
-                << " for BFCAllocator.";
+                << " for CudaAsyncAllocator.";
     }
 
     auto allocator = std::make_unique<se::GpuCudaMallocAsyncAllocator>(

@@ -340,7 +340,6 @@ cc_library(
         "@local_config_cuda//cuda:cuda_headers",
         "@local_config_cuda//cuda:cudnn_header",
         "@local_tsl//tsl/cuda:cudnn",
-        "@local_tsl//tsl/cuda:cudnn_version",
         "@local_tsl//tsl/platform:tensor_float_32_utils",
         "//xla/stream_executor",
         "//xla/stream_executor:dnn",
@@ -403,6 +402,7 @@ xla_test(
         "//xla/stream_executor:multi_platform_manager",
         "//xla/stream_executor:platform",
         "@local_tsl//tsl/platform:test",
+        "@local_tsl//tsl/platform:test_benchmark",
         "@local_tsl//tsl/platform:test_main",
     ],
 )

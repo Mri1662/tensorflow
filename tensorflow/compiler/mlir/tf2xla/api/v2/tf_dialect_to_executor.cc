@@ -23,12 +23,14 @@ limitations under the License.
 #include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
 #include "mlir/Pass/PassManager.h"  // from @llvm-project
+#include "mlir/Pass/PassRegistry.h"  // from @llvm-project
 #include "mlir/Support/LogicalResult.h"  // from @llvm-project
 #include "mlir/Transforms/Passes.h"  // from @llvm-project
 #include "tensorflow/compiler/jit/flags.h"
 #include "tensorflow/compiler/mlir/tensorflow/transforms/passes.h"
 #include "tensorflow/compiler/mlir/tensorflow/utils/data_dumper_logger_config.h"
 #include "tensorflow/compiler/mlir/tensorflow/utils/dump_mlir_util.h"
+#include "tensorflow/compiler/mlir/tf2xla/internal/logging_hooks.h"
 #include "tensorflow/core/platform/status.h"
 #include "tensorflow/core/util/debug_data_dumper.h"
 #include "tsl/lib/monitoring/counter.h"
@@ -55,24 +57,7 @@ constexpr char kExportFailed[] = "failed";
 
 namespace {
 
-// Add logger to bridge passmanager.
-// Enable timing statistics per pass for the bridge passmanager.
-void EnableDetailedLogging(PassManager *pm,
-                           llvm::StringRef module_name = llvm::StringRef()) {
-  // Print the whole module after each pass, which requires disabling
-  // multi-threading as well.
-  pm->getContext()->disableMultithreading();
-  pm->enableIRPrinting(std::make_unique<::tensorflow::DataDumperLoggerConfig>(
-      [module_name](const std::string &pass_tag_name, mlir::Operation *op) {
-        return DEBUG_DATA_DUMPER()->GetDumpFilename(
-            module_name.str(), kDebugGroupBridgePhase1, pass_tag_name);
-      },
-      "",
-      /*print_module_scope=*/true));
-  pm->enableTiming();
-}
-
-void AddGraphExportLoweringPasses(OpPassManager &pm) {
+void AddTfDialectToExecutorPasses(OpPassManager &pm) {
   pm.addPass(mlir::TF::CreateTFRegionControlFlowToFunctional());
 
   // First, we need to convert from functional, to executor dialect.
@@ -114,19 +99,21 @@ tensorflow::Status ExportFromTensorflowDialectToExecutor(
     ModuleOp module, llvm::StringRef module_name) {
   PassManager tf_to_executor(module.getContext());
   ::tensorflow::applyTensorflowAndCLOptions(tf_to_executor);
-  AddGraphExportLoweringPasses(tf_to_executor);
+  AddTfDialectToExecutorPasses(tf_to_executor);
 
   if (VLOG_IS_ON(1) ||
       DEBUG_DATA_DUMPER()->ShouldDump(module_name.str(), kDebugGroupMain)) {
     ::tensorflow::DumpMlirOpToFile(
         DEBUG_DATA_DUMPER()->GetDumpFilename(
             module_name.str(), kDebugGroupMain,
-            "tfxla_bridge_tfdialect_to_executor_before"),
+            "tfxla_bridge_v2_tfdialect_to_executor_before"),
         module, llvm::StringRef(), &tf_to_executor);
 
-    if (VLOG_IS_ON(2) || DEBUG_DATA_DUMPER()->ShouldDump(
-                             module_name.str(), kDebugGroupBridgePhase1)) {
-      EnableDetailedLogging(&tf_to_executor, module_name);
+    if (VLOG_IS_ON(2) ||
+        DEBUG_DATA_DUMPER()->ShouldDump(
+            module_name.str(), kDebugGroupBridgePhase1ExecutorExport)) {
+      internal::EnablePassIRPrinting(
+          tf_to_executor, kDebugGroupBridgePhase1ExecutorExport, module_name);
     }
   }
 
@@ -137,7 +124,7 @@ tensorflow::Status ExportFromTensorflowDialectToExecutor(
     ::tensorflow::DumpMlirOpToFile(
         DEBUG_DATA_DUMPER()->GetDumpFilename(
             module_name.str(), kDebugGroupMain,
-            "tfxla_bridge_tfdialect_to_executor_after"),
+            "tfxla_bridge_v2_tfdialect_to_executor_after"),
         module, llvm::StringRef(), &tf_to_executor);
   }
 
@@ -153,6 +140,12 @@ tensorflow::Status ExportFromTensorflowDialectToExecutor(
       ->IncrementBy(1);
   return tsl::OkStatus();
 }
+
+mlir::PassPipelineRegistration<> tf_dialect_to_executor_pipeline(
+    "tf-dialect-to-executor-v2",
+    "Run passes to convert from TF Dialect to Executor in preparation for "
+    "exporting module back to TF Graph.",
+    AddTfDialectToExecutorPasses);
 
 }  // namespace v2
 }  // namespace tf2xla
